@@ -1,0 +1,140 @@
+version: 1
+
+display_name: "USER"
+
+# Can specify the rgb values to use for your name, quoted text, and plain text
+# display_name_rgb: [255, 255, 255]
+# quotes_rgb: [220, 190, 190]
+# text_rgb: [190, 190, 190]
+
+# Aligns the text: Left, Right, Center
+chat_text_justification: Left
+
+# optional setting to add a 'buffer' between chatlog items to aid in visually grouping them.
+# add_visual_buffer_between_chatlog_items: true
+
+# Stops on finding " {display_name}:" and trims input to that.
+# Works for the user, the main character and any of the other participant characters.
+stop_on_display_name: true 
+
+# Change the progress bar colors. The primary RGB for the progress bar will be
+# overridden by the RGB color of the character's name currently causing the progress bar to show up.
+#progress_primary_rgb: [220, 240, 7]
+#progress_secondary_rgb: [48, 188, 52]
+
+# Attempts to predict how many history text characters can fit for
+# a given token budget. Defaults to 3.0 as a conservative estimate.
+#text_to_token_ratio_prediction: 3.0
+
+# Maximum number of new tokens to budget for when building the prompt.
+#maximum_new_tokens: 100
+
+# By default, it's configured towards CPU friendly settings:
+#     use_gpu=false, batch_size=8, thread_count=8
+#
+# To enable GPU accelleration, uncomment these three lines. Set thread_count
+# to the number of cores in your CPU (not the number of hyperthreads) -- unless you can
+# fit the whole thing in VRAM, then set threads to 1 since it's memory bandwitdth constrained then. 
+# On tight memory situations, backing bactch_size down to 256 can make something squeak by easier,
+# like a 33B parameter model quant on a 24 GB VRAM machine with a full context.
+#use_gpu: true
+#gpu_layer_count: 100
+#batch_size: 512
+#thread_count: 1
+
+parameters:
+  - name: "Simple-1"
+    top_k: 20
+    top_p: 0.9
+    repeat_penalty: 1.15
+    temperature: 0.7
+    repeat_penalty_range: 512
+
+  - name: "Titanic"
+    top_k: 91
+    top_p: 0.21
+    repeat_penalty: 1.21
+    temperature: 1.01
+    repeat_penalty_range: 512
+
+  - name: "Yara"
+    top_k: 72
+    top_p: 0.21
+    repeat_penalty: 1.19
+    temperature: 0.82
+    repeat_penalty_range: 512
+
+  - name: "Midnight Enigma"
+    top_k: 100
+    top_p: 0.37
+    repeat_penalty: 1.18
+    temperature: 0.98
+    repeat_penalty_range: 512
+
+  - name: "Shortwave"
+    top_k: 33
+    top_p: 0.64
+    repeat_penalty: 1.07
+    temperature: 1.53
+    repeat_penalty_range: 512
+
+  - name: "Divine Intellect"
+    top_k: 49
+    top_p: 0.14
+    repeat_penalty: 1.17
+    temperature: 1.31
+    repeat_penalty_range: 512
+
+  #top_k, top_p, and temperature are not used on mirostat samplers
+  - name: "Mirostat"
+    mirostat: 2
+    mirostat_eta: 0.1
+    mirostat_tau: 5.0
+    repeat_penalty: 1.1
+    repeat_penalty_range: 512  
+
+  - name: "Steady Hand"
+    min_p: 0.05
+    temperature: 1.1
+    repeat_penalty: 1.01
+    repeat_penalty_range: 512 
+  
+
+# NOTE: Currently models have to be full paths or relative. Things like '~' are not expanded properly.
+models:
+  - name: "nous-hermes-13b"
+    path: "models/TheBloke_Nous-Hermes-13B-GGML/nous-hermes-13b.ggmlv3.q4_K_M.bin"
+    context_size: 2048
+    prompt_instruct_template: |- 
+      ### Instruction:
+      Continue the chat dialogue below. Write a single reply for the character named "<|character_name|>".
+      <|character_description|>
+      <|user_description|>
+      <|character_context|>
+      <|chat_history|>
+      
+      ### Response: 
+      <|character_name|>: 
+
+  # Connect to kobold as a backend by specifying a 'remote_path' instead of a local file 'path'
+  - name: "kobold"
+    remote_path: "http://localhost:5001" # note that there's no / at the end
+    context_size: 2048
+    #similar_sentence_count: 3
+    prompt_instruct_template: |- 
+      Continue the chat dialogue below. Write a single reply for the character named "<|character_name|>".
+      <|character_description|>
+      <|user_description|>
+      <|character_context|>
+      <|chat_history|>
+      <|character_name|>: 
+
+# Vector embeddings can be searched for similar sentences when <|similar_sentences|> 
+# is present in a prompt template.
+#embedding_model:
+  # dir_path: "models/bge-large-en-v1.5"
+  # token_cutoff_limit: 512
+  # use_cpu: false
+  # query_pretext: "Represent this sentence for searching relevant passages: "
+  # encode_pretext: "Represent this sentence for searching relevant passages: "
+

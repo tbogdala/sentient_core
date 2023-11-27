@@ -1,0 +1,36 @@
+[package]
+name = "sentient_core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Timothy Bogdala <tdb@animal-machine.com>"]
+description = "A terminal interface for chatting with AI."
+
+
+[dependencies]
+anyhow = "1.0.72"
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.3", features = ["cuda"] }
+candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.3" }
+candle-transformers = { git = "https://github.com/huggingface/candle.git", version = "0.3" }
+chrono = "0.4.31"
+clap = "4.3.19"
+crossbeam = { version = "0.8.2", features = ["crossbeam-channel"] }
+crossterm = "0.26.1"
+directories = "5.0.1"
+llm = { git = "https://github.com/rustformers/llm" , branch = "main", features = ["cublas", "default"]}
+log = "0.4.19"
+once_cell = "1.18.0"
+rand = "0.8.5"
+ratatui = "0.22.0"
+regex = "1.9.3"
+reqwest = { version = "0.11.22", features = ["blocking"] }
+serde = { version="1.0.180", features = ["derive"] }
+serde_json = "1.0.107"
+serde_yaml = "0.9.25"
+simple_logger = { version = "4.2.0", features = ["stderr"] }
+tokenizers = "0.14.0"
+unicode-segmentation = "1.10.1"
+unicode-width = "0.1.11"
+
+[profile.release]
+debug = 1
+

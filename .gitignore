@@ -1,0 +1,10 @@
+/target/
+.vscode/
+.DS_Store
+
+# Help prevent accidental check-ins of test characters
+characters
+models
+config-*.yaml
+
+.debug*
