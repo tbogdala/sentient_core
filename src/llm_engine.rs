@@ -355,7 +355,7 @@ impl EngineState {
         // Use a default 20 minute timeout, unless configured otherwise
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(
-                self.model_config.remote_timeout_s.unwrap_or(60 * 20),
+                self.model_config.remote_timeout_s.unwrap_or(60 * 120),
             ))
             .build()
             .expect("Failed to create the blocking reqwest client for KoboldAPI.");

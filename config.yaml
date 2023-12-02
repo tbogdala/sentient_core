@@ -11,7 +11,7 @@ display_name: "USER"
 chat_text_justification: Left
 
 # optional setting to add a 'buffer' between chatlog items to aid in visually grouping them.
-# add_visual_buffer_between_chatlog_items: true
+add_visual_buffer_between_chatlog_items: true
 
 # Stops on finding " {display_name}:" and trims input to that.
 # Works for the user, the main character and any of the other participant characters.
