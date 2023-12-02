@@ -228,11 +228,23 @@ impl ChatState {
                     self.reply_text.push(to_insert);
                 }
                 KeyCode::Enter => {
+                    let mut trimmed_reply_text = self.reply_text.trim().to_string();
+
                     // if the reply text is empty, we just ignore all of this and return
-                    if self.reply_text.trim().is_empty() {
+                    if trimmed_reply_text.is_empty() {
                         return;
                     }
 
+                    // check to see if the string just ends with a non-escaped "\n" and if so,
+                    // just replace that with a newline character.
+                    if trimmed_reply_text.ends_with("\\n") {
+                        trimmed_reply_text.pop();
+                        trimmed_reply_text.pop();
+                        trimmed_reply_text.push_str("\n");
+                        self.reply_text = trimmed_reply_text;
+                        return;
+                    }
+                    
                     // officially add the message we sent to the log
                     let new_message = ChatLogItem::new_from_str(
                         self.config.display_name.clone(),
@@ -878,9 +890,11 @@ impl TerminalRenderable for ChatState {
         if self.editing_reply {
             if !self.reply_text.is_empty() {
                 // we don't add our name here, so leading space can be 0
-                let split_lines = slice_up_string(&self.reply_text, chatlog_widget_width, 0);
-                for split_line in split_lines {
-                    editing_reply_lines.push(Line::from(split_line));
+                for reply_line in self.reply_text.lines() {
+                    let split_lines = slice_up_string(reply_line, chatlog_widget_width, 0);
+                    for split_line in split_lines {
+                        editing_reply_lines.push(Line::from(split_line));
+                    }
                 }
             } else {
                 editing_reply_lines.push(Line::from(vec![Span::styled(

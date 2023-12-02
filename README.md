@@ -1,4 +1,4 @@
-# Sentient Core Development Preview v0.1.0
+# Sentient Core Development Preview v0.2.0
 
 A terminal style user interface to chat with AI characters.
 
@@ -34,6 +34,7 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] colorized log output
 - [ ] resizable width of text display
 - [x] stops the AI reponses at your display name's tag.
+- [x] multiline input is supported by ending a line with "\n" and hitting enter.
 - [x] 'multi-chat' mode ('m' key) allowing the user to ('r') reply as themselves or click a number 1-9 to reply
       as another participant. The '1' key is bound to the character owning the chatlog file.
 
