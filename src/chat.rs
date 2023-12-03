@@ -244,7 +244,7 @@ impl ChatState {
                         self.reply_text = trimmed_reply_text;
                         return;
                     }
-                    
+
                     // officially add the message we sent to the log
                     let new_message = ChatLogItem::new_from_str(
                         self.config.display_name.clone(),

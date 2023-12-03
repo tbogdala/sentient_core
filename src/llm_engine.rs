@@ -269,12 +269,17 @@ impl EngineState {
             if let Some(embedding_engine) = &self.embedding_engine {
                 // make sure all the chat log has their embeddings calculated
                 embedding_engine.build_all_vector_embeddings(&mut context.chatlog, false);
+
                 let requested_match_count = self
                     .model_config
                     .similar_sentence_count
                     .unwrap_or(DEFAULT_NUM_OF_SENTENCE_MATCHES);
-                let matches = embedding_engine
-                    .get_sentence_similarity_for_last(&context.chatlog, requested_match_count);
+                let end_offset = if context.should_continue { 1 } else { 0 };
+                let matches = embedding_engine.get_sentence_similarity_for_last(
+                    &context.chatlog,
+                    end_offset,
+                    requested_match_count,
+                );
                 let matched_strings: Vec<String> = matches.iter().map(|m| m.2.to_owned()).collect();
                 let joined_matches = matched_strings.join("\n");
                 buf = buf.replace("<|similar_sentences|>", joined_matches.as_str());
@@ -851,16 +856,20 @@ impl VectorEmbeddingEngine {
 
     // returns the number of requested similarities, if possible, as a vector of tuples
     // with each tuple being: index into the chatlog, similarity score, chatlogitem's text.
+    // The 'extra_offset' parameter should be 0 by default, but can be increased to further skip
+    // messages from the end of the log. (e.g. 'extra_offset' of 1 means that it selects the second to last
+    // chatlogitem in the chatlog)
     fn get_sentence_similarity_for_last(
         &self,
         chatlog: &ChatLog,
+        extra_offset: usize,
         number_requested: usize,
     ) -> Vec<(usize, f32, String)> {
         let mut matches = Vec::new();
 
         // get the last item to use as a test
         let last_item = chatlog
-            .get(chatlog.len() - 1)
+            .get(0.max(chatlog.len() - 1 - extra_offset))
             .context(
                 "Attempting to get last chatlogitem in the log to use for searching embeddings",
             )
