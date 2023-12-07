@@ -357,7 +357,7 @@ impl EngineState {
             let _ = raw_file.write_all(prompt.as_bytes());
         }
 
-        // Use a default 20 minute timeout, unless configured otherwise
+        // Use a default 120 minute timeout, unless configured otherwise
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 self.model_config.remote_timeout_s.unwrap_or(60 * 120),
@@ -374,8 +374,16 @@ impl EngineState {
             }
         };
 
-        let textgen_url = format!("{}{}", api_host, "/api/v1/generate");
+        // build an array of character names to stop on for everyone
+        let mut stop_seqs = vec![format!("{}: ", self.config.display_name)];
+        stop_seqs.push(format!("{}: ", context.character.name));
+        if !context.other_participants.is_empty() {
+            for other in &context.other_participants {
+                stop_seqs.push(format!("{}: ", other.0.name));
+            }
+        }
 
+        let textgen_url = format!("{}{}", api_host, "/api/v1/generate");
         let textgen_request = TextgenRemoteRequestKobold {
             prompt,
             max_context_length: Some(self.model_config.context_size),
@@ -392,6 +400,7 @@ impl EngineState {
             mirostat_eta: context.parameters.mirostat_eta,
             mirostat_tau: context.parameters.mirostat_tau,
             trim_stop: Some(true),
+            stop_sequence: if self.config.stop_on_display_name { Some(stop_seqs) } else { None },
         };
 
         // serialize the request to JSON and send it to the server; blocking because this is all
@@ -581,6 +590,7 @@ impl EngineState {
             let _ = raw_file.write_all(inferred_string.as_bytes());
         }
 
+        // TODO: Actually do the stopping of the token generation in the above loop instead. 
         // if enabled, stop the inferred string at any detected name of a participant.
         if self.config.stop_on_display_name {
             self.split_inference_at_display_names(context, &mut inferred_string);
@@ -696,6 +706,8 @@ pub struct TextgenRemoteRequestKobold {
     // memory
     #[serde(skip_serializing_if = "Option::is_none")]
     trim_stop: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_sequence: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
