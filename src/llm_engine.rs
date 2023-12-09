@@ -376,7 +376,7 @@ impl EngineState {
 
         // build an array of character names to stop on for everyone
         let mut stop_seqs = vec![format!("{}: ", self.config.display_name)];
-        stop_seqs.push(format!("{}: ", context.character.name));
+        stop_seqs.push(format!("{}: ", context.chatlog_owner.name));
         if !context.other_participants.is_empty() {
             for other in &context.other_participants {
                 stop_seqs.push(format!("{}: ", other.0.name));
