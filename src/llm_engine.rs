@@ -400,7 +400,11 @@ impl EngineState {
             mirostat_eta: context.parameters.mirostat_eta,
             mirostat_tau: context.parameters.mirostat_tau,
             trim_stop: Some(true),
-            stop_sequence: if self.config.stop_on_display_name { Some(stop_seqs) } else { None },
+            stop_sequence: if self.config.stop_on_display_name {
+                Some(stop_seqs)
+            } else {
+                None
+            },
         };
 
         // serialize the request to JSON and send it to the server; blocking because this is all
@@ -590,7 +594,7 @@ impl EngineState {
             let _ = raw_file.write_all(inferred_string.as_bytes());
         }
 
-        // TODO: Actually do the stopping of the token generation in the above loop instead. 
+        // TODO: Actually do the stopping of the token generation in the above loop instead.
         // if enabled, stop the inferred string at any detected name of a participant.
         if self.config.stop_on_display_name {
             self.split_inference_at_display_names(context, &mut inferred_string);

@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::PathBuf,
 };
 
@@ -285,6 +285,79 @@ impl ChatLog {
         Ok(())
     }
 
+    // exports the chatlog as a jsonl dataset of input-output pairs with the output
+    // being the chatlogitems where entity is a match with the parameter.
+    //
+    // Note: things may get trickier if the log isn't always a 1:1 format.
+    // The algorithm will try to combine all previous messages before the bot,
+    // but will only do so as far as the entity names are the same.
+    // Basically, multi-chat mode makes things tricker and currently, a decision
+    // was made to only include one previous entity in the 'input' field to avoid
+    // possible confusion in training.
+    pub fn export_dataset_input_ouptut(&self, fp: &PathBuf, entity: &str) -> Result<()> {
+        let mut dataset: Vec<InputOutputDatasetItem> = vec![];
+
+        // holds all the previous chatlogitem objects since the last dataset
+        // export; will be used as the input once an item from a matching entity is found.
+        let mut previous_logitems: Vec<&ChatLogItem> = vec![];
+
+        for cli in self.iter() {
+            if cli.entity.eq(entity) {
+                if previous_logitems.is_empty() == false {
+                    let last_entity = &previous_logitems.last().unwrap().entity;
+
+                    // only use one previous items where the entity's match,
+                    // instead of combining all previous items incase of mult-chat
+                    let filtered_prev_items: Vec<&ChatLogItem> = previous_logitems
+                        .iter()
+                        .rev()
+                        .take_while(|item| item.entity.eq(last_entity))
+                        .cloned()
+                        .collect();
+
+                    let joined_input = filtered_prev_items
+                        .iter()
+                        .map(|item| item.get_items_as_string())
+                        .collect::<Vec<String>>()
+                        .join("\n");
+                    dataset.push(InputOutputDatasetItem {
+                        input: joined_input,
+                        output: cli.get_items_as_string(),
+                    });
+                    previous_logitems.clear();
+                } else {
+                    // so we have a match on the entity but the previous item buffer
+                    // is empty. attempt to tack this message onto the end of the last
+                    // dataset item's output
+                    if let Some(last_item) = dataset.last() {
+                        let mut new_item = last_item.clone();
+                        new_item.output.push_str("\n");
+                        new_item.output.push_str(cli.get_items_as_string().as_str());
+                    }
+                }
+            } else {
+                previous_logitems.push(cli);
+            }
+        }
+
+        let out_file = File::create(fp).context("Attempting to create file for dataset export")?;
+        let mut writer = BufWriter::new(out_file);
+        for item in dataset {
+            let json_string = serde_json::to_string(&item)
+                .context("Attempting to serialize dataset item for input-ouput export")?;
+            writer
+                .write_all(json_string.as_bytes())
+                .context("Attempting to write out JSONL row for dataset export.")?;
+            writer
+                .write_all(b"\n")
+                .context("Attempting to write newline to separate JSON items in dataset export.")?;
+        }
+        writer
+            .flush()
+            .context("Attempting to flush dataset export buffer.")?;
+        Ok(())
+    }
+
     // returns a reference to the ChatLogItem at the specified index
     pub fn get(&self, index: usize) -> Option<&ChatLogItem> {
         self.items.get(index)
@@ -335,4 +408,10 @@ impl ChatLog {
             None
         }
     }
+}
+
+#[derive(Serialize, Clone)]
+struct InputOutputDatasetItem {
+    input: String,
+    output: String,
 }

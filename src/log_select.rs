@@ -34,6 +34,9 @@ pub struct LogSelectState {
     // contains the modal dialog widget used to prompt the user to pick a new log name
     newlog_name_editor: Option<TextEditingBlockModalWidget>,
 
+    // contains the modal dialog widget used to prompt the user to pick a new exported log file
+    export_filename_editor: Option<TextEditingBlockModalWidget>,
+
     // contains a modal dialog widget used to show a message or alert to the user
     modal_messagebox: Option<MessageBoxModalWidget>,
 }
@@ -43,6 +46,32 @@ impl TerminalRenderable for LogSelectState {
             modal.process_input(event);
             if modal.is_finished {
                 self.modal_messagebox = None;
+            }
+        } else if let Some(export_editor) = self.export_filename_editor.as_mut() {
+            export_editor.process_input(event);
+            if export_editor.is_finished {
+                let export_filename = export_editor.text.to_owned();
+                if let Some(sel_index) = self.list_state.state.selected() {
+                    let log_file = &self.logs_found[sel_index].1;
+                    let chatlog_res = ChatLog::new_from_json(&log_file);
+                    let export_filepath = log_file.with_file_name(export_filename);
+                    match chatlog_res {
+                        Ok(chatlog) => {
+                            let res = chatlog.export_dataset_input_ouptut(
+                                &export_filepath,
+                                &self.character.name,
+                            );
+                            if let Err(e) = res {
+                                log::error!("Failed to export the chatlog ({:?}): {}", log_file, e)
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("Failed to load the chatlog ({:?}): {}", log_file, err)
+                        }
+                    };
+                }
+
+                self.export_filename_editor = None;
             }
         } else if let Some(name_editor) = self.newlog_name_editor.as_mut() {
             name_editor.process_input(event);
@@ -125,12 +154,22 @@ impl TerminalRenderable for LogSelectState {
                         );
                         self.newlog_name_editor = Some(ce);
                     }
+                } else if key.code == KeyCode::Char('o') {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        // show the dialog to create a new log
+                        let ce = TextEditingBlockModalWidget::new(
+                            "Enter a name for the exported chatlog dataset:".to_owned(),
+                            String::new(),
+                        );
+                        self.export_filename_editor = Some(ce);
+                    }
                 } else if key.code == KeyCode::Char('?') {
                     let help_strings = "j      = move down\n\
                                         k      = move up\n\
                                         enter  = load selected chatlog\n\
                                         esc    = go back to character select\n\
-                                        ctrl-n = crate a new chatlog\n";
+                                        ctrl-n = create a new chatlog\n\
+                                        ctrl-o = export selected chatlog as a training dataset\n";
 
                     // show the dialog to create a new log
                     let modal =
@@ -221,9 +260,13 @@ impl TerminalRenderable for LogSelectState {
         if let Some(modal) = &self.modal_messagebox {
             modal.render(frame);
         }
-        // user is attempt to create a new chatlog?
+        // user is attempting to create a new chatlog?
         else if let Some(name_editor) = &self.newlog_name_editor {
             name_editor.render(frame);
+        }
+        // user is attempting to export a chatlog dataset?
+        else if let Some(export_editor) = &self.export_filename_editor {
+            export_editor.render(frame);
         }
     }
 }
@@ -287,6 +330,7 @@ impl LogSelectState {
             logs_found,
             list_state,
             newlog_name_editor: None,
+            export_filename_editor: None,
             modal_messagebox: None,
         }
     }
