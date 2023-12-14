@@ -55,6 +55,7 @@ The project is in its early stages, so some basic features may still be missing.
 
 ### General Features
 
+- [x] export chatlog as a dataset for finetuning. currently only exports input-output format JSONL (ctrl-o in character log select)
 - [x] vector embedding support for sentence similarity testing against the chatlog (only cuda accelleration for now)
 - [ ] spellchecker integration
 - [ ] import/export plaintext logs
