@@ -1,4 +1,7 @@
-use std::{fs::DirBuilder, path::PathBuf};
+use std::{
+    fs::DirBuilder,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -18,6 +21,12 @@ use crate::{
     },
 };
 
+enum LogSelectEditorState {
+    NewLogFilename,
+    DupeLogFilename,
+    ExportDatasetFilename,
+}
+
 pub struct LogSelectState {
     // a copy of the configuration loaded for the applciation
     config: ConfigurationFile,
@@ -31,11 +40,9 @@ pub struct LogSelectState {
     // stores the state of the list item to select the log to load
     list_state: StatefulList<String>,
 
-    // contains the modal dialog widget used to prompt the user to pick a new log name
-    newlog_name_editor: Option<TextEditingBlockModalWidget>,
-
-    // contains the modal dialog widget used to prompt the user to pick a new exported log file
-    export_filename_editor: Option<TextEditingBlockModalWidget>,
+    // contains the modal dialog widget used to prompt the user for a variety of tasks
+    // and the enum value indicating what is being edited
+    log_basic_editor: Option<(LogSelectEditorState, TextEditingBlockModalWidget)>,
 
     // contains a modal dialog widget used to show a message or alert to the user
     modal_messagebox: Option<MessageBoxModalWidget>,
@@ -47,74 +54,119 @@ impl TerminalRenderable for LogSelectState {
             if modal.is_finished {
                 self.modal_messagebox = None;
             }
-        } else if let Some(export_editor) = self.export_filename_editor.as_mut() {
-            export_editor.process_input(event);
-            if export_editor.is_finished {
-                let export_filename = export_editor.text.to_owned();
-                if let Some(sel_index) = self.list_state.state.selected() {
-                    let log_file = &self.logs_found[sel_index].1;
-                    let chatlog_res = ChatLog::new_from_json(&log_file);
-                    let export_filepath = log_file.with_file_name(export_filename);
-                    match chatlog_res {
-                        Ok(chatlog) => {
-                            let res = chatlog.export_dataset_input_ouptut(
-                                &export_filepath,
-                                &self.character.name,
-                            );
-                            if let Err(e) = res {
-                                log::error!("Failed to export the chatlog ({:?}): {}", log_file, e)
+        } else if let Some((editor_type, editor)) = self.log_basic_editor.as_mut() {
+            editor.process_input(event);
+            if editor.is_finished {
+                if editor.is_success {
+                    match editor_type {
+                        LogSelectEditorState::ExportDatasetFilename => {
+                            let export_filename = editor.text.to_owned();
+                            if let Some(sel_index) = self.list_state.state.selected() {
+                                let log_file = &self.logs_found[sel_index].1;
+                                let chatlog_res = ChatLog::new_from_json(&log_file);
+                                let export_filepath = log_file.with_file_name(export_filename);
+                                match chatlog_res {
+                                    Ok(chatlog) => {
+                                        let res = chatlog.export_dataset_input_ouptut(
+                                            &export_filepath,
+                                            &self.character.name,
+                                        );
+                                        if let Err(e) = res {
+                                            log::error!(
+                                                "Failed to export the chatlog ({:?}): {}",
+                                                log_file,
+                                                e
+                                            )
+                                        }
+                                    }
+                                    Err(err) => {
+                                        log::error!(
+                                            "Failed to load the chatlog ({:?}): {}",
+                                            log_file,
+                                            err
+                                        )
+                                    }
+                                };
                             }
                         }
-                        Err(err) => {
-                            log::error!("Failed to load the chatlog ({:?}): {}", log_file, err)
-                        }
-                    };
-                }
 
-                self.export_filename_editor = None;
-            }
-        } else if let Some(name_editor) = self.newlog_name_editor.as_mut() {
-            name_editor.process_input(event);
-            if name_editor.is_finished {
-                if name_editor.is_success {
-                    // create the new log
-                    let newlog_name = name_editor.text.to_owned();
-                    let log_folder_path = get_log_folder(self.character.name.as_str());
-                    let new_log_folder_path = log_folder_path.join(newlog_name);
-                    let new_log_file_path = new_log_folder_path.join(LOG_FILE_NAME);
-                    if new_log_file_path.exists() {
-                        log::error!(
-                            "Log file already exists, so a new one will not be created here: {:?}",
-                            new_log_file_path
-                        );
-                    } else {
-                        let made_dir = DirBuilder::new()
-                            .recursive(true)
-                            .create(new_log_folder_path)
-                            .context("Attempting to create the directory for the new chatlog");
-                        if made_dir.is_ok() {
-                            let new_log = ChatLog::new_with_greeting(
-                                &self.character,
-                                &self.config.display_name,
-                            );
-                            if let Err(err) = new_log.save_to_json_file(&new_log_file_path) {
+                        LogSelectEditorState::NewLogFilename => {
+                            // create the new log
+                            let newlog_name = editor.text.to_owned();
+                            let log_folder_path = get_log_folder(self.character.name.as_str());
+                            let new_log_folder_path = log_folder_path.join(newlog_name);
+                            let new_log_file_path = new_log_folder_path.join(LOG_FILE_NAME);
+                            if new_log_file_path.exists() {
                                 log::error!(
-                                    "Failed to save the new log file to {:?}: {}",
-                                    new_log_file_path,
-                                    err
-                                );
+                                        "Log file already exists, so a new one will not be created here: {:?}",
+                                        new_log_file_path
+                                    );
                             } else {
-                                return ProcessInputResult::ChangeScene(
-                                    crate::application::ApplicationState::Chat(
-                                        self.character.to_owned(),
-                                        new_log,
-                                    ),
-                                );
+                                let made_dir = DirBuilder::new()
+                                    .recursive(true)
+                                    .create(new_log_folder_path)
+                                    .context(
+                                        "Attempting to create the directory for the new chatlog",
+                                    );
+                                if made_dir.is_ok() {
+                                    let new_log = ChatLog::new_with_greeting(
+                                        &self.character,
+                                        &self.config.display_name,
+                                    );
+                                    if let Err(err) = new_log.save_to_json_file(&new_log_file_path)
+                                    {
+                                        log::error!(
+                                            "Failed to save the new log file to {:?}: {}",
+                                            new_log_file_path,
+                                            err
+                                        );
+                                    } else {
+                                        return ProcessInputResult::ChangeScene(
+                                            crate::application::ApplicationState::Chat(
+                                                self.character.to_owned(),
+                                                new_log,
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        LogSelectEditorState::DupeLogFilename => {
+                            if let Some(sel_index) = self.list_state.state.selected() {
+                                let source_log_dir = &self.logs_found[sel_index]
+                                    .0
+                                    .file_name()
+                                    .context("Attempting to get the source dir name to duplicate.")
+                                    .unwrap();
+                                let new_log_dir = editor.text.to_owned();
+
+                                let log_folder_path = get_log_folder(self.character.name.as_str());
+                                let src_log_folder_path = log_folder_path.join(source_log_dir);
+                                let dst_log_folder_path = log_folder_path.join(new_log_dir);
+
+                                if let Err(err) = copy_files_in_dir(
+                                    src_log_folder_path.as_path(),
+                                    dst_log_folder_path.as_path(),
+                                ) {
+                                    log::error!(
+                                        "Failed to copy the log folder from {} to {}: {}",
+                                        src_log_folder_path.to_str().unwrap_or("<Unknown>"),
+                                        dst_log_folder_path.to_str().unwrap_or("<Unknown>"),
+                                        err
+                                    );
+                                } else {
+                                    // update the user interface by creating a new instance of
+                                    // it and then ripping out the directories found and the list state
+                                    let new_lss = LogSelectState::new(self.character.clone(), self.config.clone());
+                                    self.list_state = new_lss.list_state;
+                                    self.logs_found = new_lss.logs_found;
+                                }
                             }
                         }
                     }
                 }
-                self.newlog_name_editor = None;
+                self.log_basic_editor = None;
             }
         } else {
             if let TerminalEvent::Key(key) = event {
@@ -152,16 +204,42 @@ impl TerminalRenderable for LogSelectState {
                             "Enter a name for the new chatlog:".to_owned(),
                             String::new(),
                         );
-                        self.newlog_name_editor = Some(ce);
+                        self.log_basic_editor = Some((LogSelectEditorState::NewLogFilename, ce));
                     }
                 } else if key.code == KeyCode::Char('o') {
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        // show the dialog to create a new log
+                        // show the dialog to create a new exported dataset
                         let ce = TextEditingBlockModalWidget::new(
                             "Enter a name for the exported chatlog dataset:".to_owned(),
                             String::new(),
                         );
-                        self.export_filename_editor = Some(ce);
+                        self.log_basic_editor =
+                            Some((LogSelectEditorState::ExportDatasetFilename, ce));
+                    }
+                } else if key.code == KeyCode::Char('d') {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        let starting_value = if let Some(sel_index) =
+                            self.list_state.state.selected()
+                        {
+                            self.logs_found[sel_index]
+                                    .0
+                                    .file_name()
+                                    .context("Attempting to get directory name of a path for log duplication")
+                                    .unwrap()
+                                    .to_str()
+                                    .context("Converting log filename to string")
+                                    .unwrap()
+                                    .to_string()
+                        } else {
+                            String::new()
+                        };
+
+                        // show the dialog to duplicate the selected log file
+                        let ce = TextEditingBlockModalWidget::new(
+                            "Enter a new name for the duplicate chatlog:".to_owned(),
+                            starting_value,
+                        );
+                        self.log_basic_editor = Some((LogSelectEditorState::DupeLogFilename, ce));
                     }
                 } else if key.code == KeyCode::Char('?') {
                     let help_strings = "j      = move down\n\
@@ -169,6 +247,7 @@ impl TerminalRenderable for LogSelectState {
                                         enter  = load selected chatlog\n\
                                         esc    = go back to character select\n\
                                         ctrl-n = create a new chatlog\n\
+                                        ctrl-d = duplicate existing chatlog with a new name\n\
                                         ctrl-o = export selected chatlog as a training dataset\n";
 
                     // show the dialog to create a new log
@@ -261,12 +340,8 @@ impl TerminalRenderable for LogSelectState {
             modal.render(frame);
         }
         // user is attempting to create a new chatlog?
-        else if let Some(name_editor) = &self.newlog_name_editor {
-            name_editor.render(frame);
-        }
-        // user is attempting to export a chatlog dataset?
-        else if let Some(export_editor) = &self.export_filename_editor {
-            export_editor.render(frame);
+        else if let Some((_, editor)) = &self.log_basic_editor {
+            editor.render(frame);
         }
     }
 }
@@ -329,9 +404,32 @@ impl LogSelectState {
             character,
             logs_found,
             list_state,
-            newlog_name_editor: None,
-            export_filename_editor: None,
+            log_basic_editor: None,
             modal_messagebox: None,
         }
     }
+}
+
+// this function only copies files from one directory to another; directories are skipped.
+// the destination directory will be created if it doesn't exist already
+fn copy_files_in_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() {
+                std::fs::copy(
+                    &path,
+                    dst.join(
+                        path.file_name()
+                            .context(
+                                "Getting the filename for the source file during directory copy.",
+                            )
+                            .unwrap(),
+                    ),
+                )?;
+            }
+        }
+    }
+    Ok(())
 }

@@ -23,6 +23,7 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] create replies to the bot ('r' key command)
 - [x] switch between parameter configuration sets ('p' key command, then 'h'/'l' to swtich between)
 - [x] saving and switching between multiple chat logs for a character ('ctrl-n' in the log selector menu creates a new log)
+- [x] duplicating chat logs ('ctrl-d' in the log selector menu creates a duplcicate copy of the log)
 - [x] regenerate ('ctrl+r' key command)
 - [x] continue ('crtl-t' key command)
 - [x] additional generation ('ctrl-y' key command)
