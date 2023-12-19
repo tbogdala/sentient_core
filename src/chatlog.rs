@@ -5,10 +5,18 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use candle_core::Tensor;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "sentence_similarity")]
+use candle_core::Tensor;
+
+// at no point should this be actually used as a 'Tensor' type
+// ... it's only meant to satisfy the compiler when embeddings
+// will not be used due to configuration.
+#[cfg(not(feature = "sentence_similarity"))]
+type Tensor = u8;
 
 use crate::config::CharacterFileYaml;
 

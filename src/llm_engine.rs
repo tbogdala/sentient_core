@@ -1,35 +1,32 @@
-use std::{
-    convert::Infallible,
-    fs::File,
-    io::Read,
-    path::Path,
-    str::FromStr,
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::thread;
 
 // these to uses are for logging debug files out for the prompt and the text inferrence result.
+#[cfg(debug_assertions)]
+use std::fs::File;
 #[cfg(debug_assertions)]
 use std::io::Write;
 
 use crossbeam::channel::{bounded, Receiver, Sender};
-use llm::Model;
-use rand::rngs::ThreadRng;
+use llama_cpp_rs::{
+    options::{ModelOptions, PredictOptions},
+    LLama,
+};
+use rand::{rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    chatlog::{ChatLog, ChatLogItem},
-    config::*,
-};
-use anyhow::{Context, Error as E, Result};
-use candle_core::{Device, Tensor};
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
-use tokenizers::Tokenizer;
+use crate::{chatlog::ChatLog, config::*};
+use anyhow::Context;
 
-const DEFAULT_NUM_OF_SENTENCE_MATCHES: usize = 3;
+#[cfg(feature = "sentence_similarity")]
+use crate::vector_embedding_engine::VectorEmbeddingEngine;
 
-const DEFAULT_TEXT_TO_TOKEN_RATIO: f32 = 3.0;
-const DEFAULT_MAX_NEW_TOKENS: usize = 150;
+#[cfg(feature = "sentence_similarity")]
+pub const DEFAULT_NUM_OF_SENTENCE_MATCHES: usize = 3;
+
+pub const DEFAULT_TEXT_TO_TOKEN_RATIO: f32 = 3.0;
+pub const DEFAULT_MAX_NEW_TOKENS: usize = 150;
+pub const DEFAULT_BATCH_SIZE: usize = 8;
+pub const DEFAULT_THREAD_COUNT: usize = 8;
 
 #[derive(Clone, PartialEq)]
 pub enum LlmEngineRequest {
@@ -60,32 +57,37 @@ impl LlmEngine {
                 .unwrap();
             let mut llm_model = None;
 
-            if let Some(local_model_path) = &model_config.path {
-                // enable gpu offloading here and default behavior
-                // seems to offload all layers.
-                let mut model_params = llm::ModelParameters::default();
-                model_params.use_gpu = config.use_gpu.unwrap_or(false);
-                model_params.gpu_layers = model_config.gpu_layer_count;
-                model_params.context_size = model_config.context_size;
-                model_params.n_gqa = model_config.gqa;
+            // setup the thread rng
+            let mut rng = rand::thread_rng();
 
-                // load the model, ignoring any loading progress ...
-                let model_path = Path::new(local_model_path);
-                llm_model = Some(
-                    llm::load_dynamic(
-                        Some(llm::ModelArchitecture::Llama),
-                        model_path,
-                        llm::TokenizerSource::Embedded,
-                        model_params,
-                        |_| {},
-                    )
-                    .unwrap_or_else(|err| {
-                        panic!("Failed to load model from {model_fileorname:?}: {err}")
-                    }),
-                );
+            // if we're using a local model, load it up
+            if let Some(local_model_path) = &model_config.path {
+                // use a provided seed for the model or make a new one
+                let this_seed = match model_config.seed {
+                    Some(s) => s,
+                    None => rng.gen_range(0..i32::MAX),
+                };
+
+                let model_params = ModelOptions {
+                    context_size: model_config.context_size as i32,
+                    seed: this_seed,
+                    n_gpu_layers: if config.use_gpu.unwrap_or(false) {
+                        model_config.gpu_layer_count.unwrap_or(0) as i32
+                    } else {
+                        0
+                    },
+                    n_batch: config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
+                    ..Default::default()
+                };
+
+                llm_model = match LLama::new(local_model_path.clone(), &model_params) {
+                    Ok(m) => Some(m),
+                    Err(err) => panic!("Failed to load model from {local_model_path}: {err}"),
+                };
             }
 
             // now load the embedding model
+            #[cfg(feature = "sentence_similarity")]
             let embedding_engine = match &config.embedding_model {
                 Some(embedding_config) => Some(
                     VectorEmbeddingEngine::new(&embedding_config)
@@ -100,7 +102,10 @@ impl LlmEngine {
                 model_config: model_config.clone(),
                 default_model_config: model_config,
                 config,
-                embedding_engine,
+
+                #[cfg(feature = "sentence_similarity")]
+                embedding_engine: embedding_engine,
+
                 rng: rand::thread_rng(),
             };
 
@@ -155,30 +160,35 @@ impl LlmEngine {
                             );
 
                             if let Some(local_model_path) = &model_config.path {
-                                // enable gpu offloading here and default behavior
-                                // seems to offload all layers.
-                                let mut model_params = llm::ModelParameters::default();
-                                model_params.use_gpu = engine_state.config.use_gpu.unwrap_or(false);
-                                model_params.gpu_layers = engine_state.model_config.gpu_layer_count;
-                                model_params.context_size = engine_state.model_config.context_size;
-                                model_params.n_gqa = engine_state.model_config.gqa;
+                                // use a provided seed for the model or make a new one
+                                let this_seed = match model_config.seed {
+                                    Some(s) => s,
+                                    None => engine_state.rng.gen_range(0..i32::MAX),
+                                };
 
-                                // load the model, ignoring any loading progress ...
-                                let model_path = Path::new(local_model_path);
-                                engine_state.model = Some(
-                                    llm::load_dynamic(
-                                        Some(llm::ModelArchitecture::Llama),
-                                        model_path,
-                                        llm::TokenizerSource::Embedded,
-                                        model_params,
-                                        |_| {},
-                                    )
-                                    .unwrap_or_else(|err| {
-                                        panic!(
-                                            "Failed to load model from {model_fileorname:?}: {err}"
-                                        )
-                                    }),
-                                );
+                                let model_params = ModelOptions {
+                                    context_size: model_config.context_size as i32,
+                                    seed: this_seed,
+                                    n_gpu_layers: if engine_state.config.use_gpu.unwrap_or(false) {
+                                        model_config.gpu_layer_count.unwrap_or(0) as i32
+                                    } else {
+                                        0
+                                    },
+                                    n_batch: engine_state
+                                        .config
+                                        .batch_size
+                                        .unwrap_or(DEFAULT_BATCH_SIZE)
+                                        as i32,
+                                    ..Default::default()
+                                };
+
+                                engine_state.model =
+                                    match LLama::new(local_model_path.clone(), &model_params) {
+                                        Ok(m) => Some(m),
+                                        Err(err) => panic!(
+                                            "Failed to load model from {local_model_path}: {err}"
+                                        ),
+                                    };
                             }
                         }
 
@@ -231,7 +241,7 @@ pub struct TextInferenceContext {
 
 struct EngineState {
     // the loaded model
-    model: Option<Box<dyn Model>>,
+    model: Option<LLama>,
 
     // the currently active model configuration
     model_config: ConfiguredLlm,
@@ -243,6 +253,7 @@ struct EngineState {
     config: ConfigurationFile,
 
     // an optional handle to the vector embedding engine
+    #[cfg(feature = "sentence_similarity")]
     embedding_engine: Option<VectorEmbeddingEngine>,
 
     // our thread random generator
@@ -265,6 +276,7 @@ impl EngineState {
 
         // test to see if this template wants the vector embedding support as well
         // only works with non-empty chat logs.
+        #[cfg(feature = "sentence_similarity")]
         if buf.contains("<|similar_sentences|>") && context.chatlog.len() > 0 {
             if let Some(embedding_engine) = &self.embedding_engine {
                 // make sure all the chat log has their embeddings calculated
@@ -458,12 +470,74 @@ impl EngineState {
     }
 
     fn text_infer(&mut self, context: &mut TextInferenceContext) -> Option<String> {
-        let mut session_config: llm::InferenceSessionConfig = Default::default();
-        session_config.n_batch = self.config.batch_size.unwrap_or(512);
-        session_config.n_threads = self.config.thread_count.unwrap_or(8);
+        let this_seed = match self.model_config.seed {
+            Some(s) => s,
+            None => -1, // this should make llama.cpp make a random seed
+        };
 
-        let mut session = self.model.as_mut().unwrap().start_session(session_config);
-        let mut inferred_string = String::new();
+        let mut predict_options = PredictOptions {
+            seed: this_seed,
+            batch: self.config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
+            threads: self.config.thread_count.unwrap_or(DEFAULT_THREAD_COUNT) as i32,
+            tokens: self
+                .config
+                .maximum_new_tokens
+                .unwrap_or(DEFAULT_MAX_NEW_TOKENS) as i32,
+            ..Default::default()
+        };
+
+        // Setup all the sampler options, overriding the defaults presented by
+        // the library if they're configured in the parameter set.
+        if let Some(mirostat_type) = context.parameters.mirostat {
+            // only valid options are 1 and 2
+            if mirostat_type == 1 || mirostat_type == 2 {
+                // disable top_p / top_k / min_p / temp
+                predict_options.top_k = 0;
+                predict_options.top_p = 1.0;
+                predict_options.temperature = 1.0;
+                predict_options.min_p = 0.0;
+                predict_options.mirostat = mirostat_type as i32;
+                if let Some(eta) = context.parameters.mirostat_eta {
+                    predict_options.mirostat_eta = eta;
+                }
+                if let Some(tau) = context.parameters.mirostat_tau {
+                    predict_options.mirostat_tau = tau;
+                }
+            }
+        } else {
+            predict_options.mirostat = 0;
+            if let Some(top_k) = context.parameters.top_k {
+                predict_options.top_k = top_k as i32;
+            }
+            if let Some(top_p) = context.parameters.top_p {
+                predict_options.top_p = top_p;
+            }
+            if let Some(min_p) = context.parameters.min_p {
+                predict_options.min_p = min_p;
+            }
+            if let Some(temp) = context.parameters.temperature {
+                predict_options.temperature = temp;
+            }
+        }
+        if let Some(rep_pen) = context.parameters.repeat_penalty {
+            predict_options.penalty = rep_pen;
+        }
+        if let Some(rep_range) = context.parameters.repeat_penalty_range {
+            predict_options.repeat = rep_range as i32;
+        }
+
+        // FIXME: get display name stopping working again
+        // if self.config.stop_on_display_name {
+        //     // build an array of character names to stop on for everyone
+        //     let mut stop_seqs = vec![format!("{}: ", self.config.display_name)];
+        //     stop_seqs.push(format!("{}: ", context.chatlog_owner.name));
+        //     if !context.other_participants.is_empty() {
+        //         for other in &context.other_participants {
+        //             stop_seqs.push(format!("{}: ", other.0.name));
+        //         }
+        //     }
+        //     predict_options.stop_prompts = stop_seqs;
+        // }
 
         let prompt = self.create_prompt_for_chat_input(context);
 
@@ -474,118 +548,26 @@ impl EngineState {
             let _ = raw_file.write_all(prompt.as_bytes());
         }
 
-        // build the sampler string to build the sampler chain from
-        let mut buffer = String::new();
-        if let Some(rep_pen) = context.parameters.repeat_penalty {
-            buffer.push_str(format!("repetition:penalty={}", rep_pen).as_str());
-            if let Some(pen_range) = context.parameters.repeat_penalty_range {
-                buffer.push_str(format!(":last_n={}", pen_range).as_str());
-            }
-        }
-
-        // a lot of sampler parameters are not valid for mirostat, so handle them separately
-        if let Some(mirostat_type) = context.parameters.mirostat {
-            // only valid options are 1 and 2
-            if mirostat_type == 1 || mirostat_type == 2 {
-                buffer.push_str(format!(" mirostat{}", mirostat_type).as_str());
-
-                if let Some(eta) = context.parameters.mirostat_eta {
-                    buffer.push_str(format!(":eta={}", eta).as_str());
-                }
-                if let Some(tau) = context.parameters.mirostat_tau {
-                    buffer.push_str(format!(":tau={}", tau).as_str());
-                }
-            }
-        } else {
-            if let Some(top_k) = context.parameters.top_k {
-                buffer.push_str(format!(" top_k:k={}:min_keep=1", top_k).as_str());
-            }
-            if let Some(top_p) = context.parameters.top_p {
-                buffer.push_str(format!(" top_p:p={}:min_keep=1", top_p).as_str());
-            }
-            if let Some(min_p) = context.parameters.min_p {
-                buffer.push_str(format!(" min_p:p={}:min_keep=1", min_p).as_str());
-            }
-            if let Some(temperature) = context.parameters.temperature {
-                buffer.push_str(format!(" temperature:temperature={}", temperature).as_str());
-            }
-        }
-
-        let samplers_p = llm::samplers::ConfiguredSamplers::from_str(buffer.as_str());
-        let samplers = if let Ok(samplers) = samplers_p {
-            samplers.builder.into_chain()
-        } else {
-            log::error!(
-                "Unable to build sampler chain from the configuration requested ({}): {:?}",
-                buffer,
-                samplers_p.err()
-            );
-            llm::samplers::ConfiguredSamplers::default()
-                .builder
-                .into_chain()
-        };
-
-        let parameters = llm::InferenceParameters {
-            sampler: Arc::new(Mutex::new(samplers)),
-        };
-
-        // pull the new-token count from the config file if specified
-        let token_count = self
-            .config
-            .maximum_new_tokens
-            .unwrap_or(DEFAULT_MAX_NEW_TOKENS);
-
         let local_model_unwrapped = self.model.as_ref().unwrap();
-        let res = session.infer::<Infallible>(
-            // model to use for text generation
-            local_model_unwrapped.as_ref(),
-            // randomness provider
-            &mut self.rng,
-            // the prompt to use for text generation, as well as other
-            // inference parameters
-            &llm::InferenceRequest {
-                prompt: prompt.as_str().into(),
-                parameters: &parameters,
-                play_back_previous_tokens: false,
-                maximum_token_count: Some(token_count),
-            },
-            // llm::OutputRequest
-            &mut Default::default(),
-            // output callback
-            |t| {
-                if let llm::InferenceResponse::InferredToken(token) = t {
-                    inferred_string.push_str(token.as_str());
+        let (mut inferred_string, timings) =
+            match local_model_unwrapped.predict(prompt, predict_options) {
+                Ok((s, t)) => (s, t),
+                Err(err) => {
+                    log::error!("Text inference failed: {}", err);
+                    return None;
                 }
-                return Ok(llm::InferenceFeedback::Continue);
-            },
-        );
+            };
 
-        match res {
-            Err(err) => log::error!("Error: {err}"),
-            Ok(stats) => {
-                log::debug!("Inference Stats: {}", stats.to_string());
-
-                // we have a tracker variable for how much text we can squeeze into a token
-                // budget. this is the learning tracker based on what the library reports
-                // as the token count to the prompt we passed in.
-
-                // Disabled for now...
-                // const LEARNING_RATE: f32 = 0.1;
-                // let token_ratio = prompt.len() as f32 / stats.prompt_tokens as f32;
-                // let old_ratio = self
-                //     .config
-                //     .text_to_token_ratio_prediction
-                //     .unwrap_or(DEFAULT_TEXT_TO_TOKEN_RATIO);
-                // let ratio_delta = (token_ratio - old_ratio) * LEARNING_RATE;
-                // self.config.text_to_token_ratio_prediction = Some(old_ratio + ratio_delta);
-                // log::debug!("Text2Token ratio for prompt: {}", token_ratio);
-                // log::debug!(
-                //     "Text2Token old ratio: {} ... new delta: {}",
-                //     old_ratio,
-                //     ratio_delta
-                // );
-            }
-        };
+        log::debug!("{} tokens ; load {:.2}ms ; sample {:.2}T/s ; prompt ({}) eval {:.2}T/s ; eval {:.2}T/s ; total {:.2} ms ({:.2} T/s)",
+            timings.n_eval,
+            timings.t_load_ms,
+            1e3 / timings.t_sample_ms * timings.n_sample as f64,
+            timings.n_p_eval,
+            1e3 / timings.t_p_eval_ms * timings.n_p_eval as f64,
+            1e3 / timings.t_eval_ms * timings.n_eval as f64,
+            timings.t_end_ms - timings.t_start_ms,
+            1e3 / (timings.t_end_ms - timings.t_start_ms) * timings.n_eval as f64
+            );
 
         // DEBUG WRITE OUT THE PROMPT TO A FILE.
         #[cfg(debug_assertions)]
@@ -722,264 +704,4 @@ pub struct TextgenResponseBodyKobold {
 #[derive(Deserialize, Debug, Clone)]
 pub struct TextgenResponseBodyResultKobold {
     text: String,
-}
-
-pub struct VectorEmbeddingEngine {
-    model: BertModel,
-    tokenizer: Tokenizer,
-    config: ConfiguredEmbeddingModel,
-}
-impl VectorEmbeddingEngine {
-    // creates a new VectorEmbedingEngine and gets it ready to generate embeddings.
-    //
-    // emb_model_dir should be a directory that contains: `config.json`, `tokenizer.json`, `model.safetensors`
-    // for the BERT embedding model.
-    // token_cutoff_limit should be the number of incoming tokens the embedding model can proces before
-    // it clips the input. (commonly 256 or 512)
-    pub fn new(emb_config: &ConfiguredEmbeddingModel) -> Result<Self> {
-        //emb_model_dir: &str, token_cutoff_limit: usize
-        let emb_model_dir = &emb_config.dir_path;
-
-        let device = if emb_config.use_cpu {
-            Device::Cpu
-        } else {
-            Device::new_cuda(0).unwrap()
-        };
-
-        let config_filename = format!("{}/config.json", emb_model_dir);
-        let tokenizer_filename = format!("{}/tokenizer.json", emb_model_dir);
-
-        let config_str = std::fs::read_to_string(config_filename)
-            .context("Attempting to read config.json for the embedding model")?;
-        let config: Config = serde_json::from_str(&config_str)
-            .context("Attempting to deserialize config.json for the embedding model")?;
-        let mut tokenizer = Tokenizer::from_file(tokenizer_filename)
-            .map_err(E::msg)
-            .unwrap();
-        if let Some(pp) = tokenizer.get_padding_mut() {
-            pp.strategy = tokenizers::PaddingStrategy::BatchLongest
-        } else {
-            let pp = tokenizers::PaddingParams {
-                strategy: tokenizers::PaddingStrategy::BatchLongest,
-                ..Default::default()
-            };
-            tokenizer.with_padding(Some(pp));
-        }
-
-        // attempt to load the safetensor model filename first but fallback to the pth format if needed
-        let weights_filename_st = format!("{}/model.safetensors", emb_model_dir);
-        let safetensor_path = Path::new(&weights_filename_st);
-        let vb = if safetensor_path.exists() {
-            let mut weights_bytes = Vec::new();
-            let mut weights_file = File::open(safetensor_path)
-                .context("Attempting to open model.safetensors for the embedding model")?;
-            weights_file
-                .read_to_end(&mut weights_bytes)
-                .context("Attempting to read model.safetensors for the embedding model")?;
-            candle_nn::VarBuilder::from_buffered_safetensors(weights_bytes, DTYPE, &device)
-                .context("Processing safetensor weights for the embedding model.")?
-        } else {
-            let weights_filename_pth = format!("{}/pytorch_model.bin", emb_model_dir);
-            candle_nn::VarBuilder::from_pth(weights_filename_pth, DTYPE, &device)
-                .context("Processing pth weights for the embedding model.")?
-        };
-
-        let model = BertModel::load(vb, &config).context("Attempting to build the BERT model")?;
-
-        Ok(Self {
-            model,
-            tokenizer,
-            config: emb_config.clone(),
-        })
-    }
-
-    fn build_all_vector_embeddings(
-        &self,
-        // the chatlog to build embeddings for
-        chatlog: &mut ChatLog,
-        // if false it will skip chatlogitems with non-empty embedding vectors
-        force_recalculation: bool,
-    ) {
-        // let mut chatlog_embeddings: Vec<Tensor> = Vec::new();
-        let device = &self.model.device;
-        for i in 0..chatlog.len() {
-            let chatlogitem: &mut ChatLogItem = chatlog.get_mut(i).unwrap();
-            // if we're not forcing recalculation and we already have embeddings, move on...
-            if chatlogitem.embeddings.is_empty() == false && force_recalculation == false {
-                continue;
-            }
-
-            // get the whole text of the chat log item so that we can do embeddings on sentence boundaries
-            let whole_text = chatlogitem.get_name_and_items_as_string();
-
-            let mut chunked_line = Vec::new();
-            let mut buffer = String::new();
-            for line in whole_text.lines() {
-                // first check to see if we can add new line to buffer without overflowing our token budget
-                if buffer.len() + line.len()
-                    < (self.config.token_cutoff_limit as f32 * DEFAULT_TEXT_TO_TOKEN_RATIO) as usize
-                {
-                    buffer.push_str(line);
-                } else {
-                    // we can't fit this sentence, but handle a special case where buffer is empty and this
-                    // is the first sentence - which must be ungodly long - so it's just gonna have to get
-                    // truncated by the embedding model.
-                    if buffer.is_empty() {
-                        buffer.push_str(line);
-                    }
-
-                    // so now we know we're maxed out for our budget; move the buffer to the vector of
-                    // chunked lines and clear it out for a new chunk start.
-                    chunked_line.push(buffer);
-                    buffer = String::new();
-                }
-            }
-
-            // any remaining buffer gets turned into a chunk
-            chunked_line.push(buffer);
-
-            // now we go through and make embeddings for each chunk
-            let embedding_encode_pretext = match &self.config.encode_pretext {
-                Some(s) => s.as_str(),
-                None => "",
-            };
-            chatlogitem.embeddings.clear();
-            for line in &chunked_line {
-                match generate_vector_embedding(
-                    device,
-                    &self.model,
-                    &self.tokenizer,
-                    embedding_encode_pretext,
-                    line,
-                ) {
-                    Ok(embedding) => {
-                        log::trace!(
-                            "Loaded and encoded sentence {i} (shape {:?})...",
-                            embedding.shape()
-                        );
-                        chatlogitem.embeddings.push(embedding);
-                    }
-                    Err(err) => {
-                        log::error!(
-                            "Failed to encode vector embeddings for sentence {i}: {}",
-                            err
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    // returns the number of requested similarities, if possible, as a vector of tuples
-    // with each tuple being: index into the chatlog, similarity score, chatlogitem's text.
-    // The 'extra_offset' parameter should be 0 by default, but can be increased to further skip
-    // messages from the end of the log. (e.g. 'extra_offset' of 1 means that it selects the second to last
-    // chatlogitem in the chatlog)
-    fn get_sentence_similarity_for_last(
-        &self,
-        chatlog: &ChatLog,
-        extra_offset: usize,
-        number_requested: usize,
-    ) -> Vec<(usize, f32, String)> {
-        let mut matches = Vec::new();
-
-        // get the last item to use as a test
-        let last_item = chatlog
-            .get(0.max(chatlog.len() - 1 - extra_offset))
-            .context(
-                "Attempting to get last chatlogitem in the log to use for searching embeddings",
-            )
-            .unwrap();
-        log::debug!(
-            "About to test for {} similarities for the last log item: {}",
-            number_requested,
-            last_item.get_name_and_items_as_string()
-        );
-
-        let embedding_query_pretext = match &self.config.query_pretext {
-            Some(s) => s.as_str(),
-            None => "",
-        };
-
-        let text = &last_item.get_name_and_items_as_string();
-        let device = &self.model.device;
-
-        // Note: This doesn't cope with multiple embeddings needed to cover long similarity tests from an incoming message
-        let test_embedding = generate_vector_embedding(
-            device,
-            &self.model,
-            &self.tokenizer,
-            embedding_query_pretext,
-            text,
-        )
-        .context("Generating embedding for query in sentence similarity test.")
-        .unwrap();
-
-        let mut similarities = vec![];
-        for (i, item) in chatlog.iter().take(chatlog.len() - 1).enumerate() {
-            for item_embedding in item.embeddings.iter() {
-                match vector_embedding_cosine_similarity(&test_embedding, item_embedding) {
-                    Ok(cosine_similarity) => similarities.push((cosine_similarity, i)),
-                    Err(err) => log::error!(
-                        "Failed to encode vector embeddings for sentence {i}: {}",
-                        err
-                    ),
-                }
-            }
-        }
-
-        let num_to_get = if number_requested > similarities.len() {
-            similarities.len()
-        } else {
-            number_requested
-        };
-        similarities.sort_by(|u, v| v.0.total_cmp(&u.0));
-        for &(score, i) in similarities[..num_to_get].iter() {
-            let matched_item = chatlog.get(i).unwrap();
-            let result_str = matched_item.get_name_and_items_as_string();
-            log::debug!("Result #{i} Score:{score:.2} Text: {}", result_str);
-            matches.push((i, score, result_str));
-        }
-
-        matches
-    }
-}
-
-// generates a vector embedding Tensor with the device, model and tokenizer passed in for the text specified.
-fn generate_vector_embedding(
-    device: &Device,
-    model: &BertModel,
-    tokenizer: &Tokenizer,
-    embedding_pretext: &str,
-    text: &str,
-) -> Result<Tensor> {
-    // prepend a directive, if appropriate for the embedding model
-    let embedding_text = [embedding_pretext, text].concat();
-
-    let tokens = tokenizer
-        .encode(embedding_text, true)
-        .map_err(E::msg)?
-        .get_ids()
-        .to_vec();
-    let token_ids = Tensor::new(&tokens[..], device)?.unsqueeze(0)?;
-    let token_type_ids = token_ids.zeros_like()?;
-    let ys = model.forward(&token_ids, &token_type_ids)?;
-
-    // Apply some avg-pooling by taking the mean embedding value for all tokens (including padding)
-    let (_n_sentence, n_tokens, _hidden_size) = ys.dims3()?;
-    let embedding = (ys.sum(1)? / (n_tokens as f64))?.squeeze(0)?;
-
-    // L2 normalization ripped from Candle example - not important with cosine similarity
-    // let normalized = embedding.broadcast_div(&embedding.sqr()?.sum_keepdim(0)?.sqrt()?)?;
-
-    Ok(embedding)
-}
-
-// calculates the cosine similarity between two vector embedding Tensors
-fn vector_embedding_cosine_similarity(first: &Tensor, second: &Tensor) -> Result<f32> {
-    let sum_ij = (second * first)?.sum_all()?.to_scalar::<f32>()?;
-    let sum_i2 = (second * second)?.sum_all()?.to_scalar::<f32>()?;
-    let sum_j2 = (first * first)?.sum_all()?.to_scalar::<f32>()?;
-
-    Ok(sum_ij / (sum_i2 * sum_j2).sqrt())
 }

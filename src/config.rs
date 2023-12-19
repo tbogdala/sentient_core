@@ -124,10 +124,9 @@ pub struct ConfiguredLlm {
     // applies only to locally hosted models
     pub gpu_layer_count: Option<usize>,
 
-    // the Grouped-Query Attention number to use for the model;
-    // for Llama2 70B models this should be 8, for example.
-    // applies only to locally hosted models
-    pub gqa: Option<usize>,
+    // the seed to use for this particular model when generating text
+    // if not set, a random one will be chosen
+    pub seed: Option<i32>,
 
     // the string used as the main template for text inference
     // with several tags that get replaced with content at

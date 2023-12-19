@@ -4,13 +4,14 @@ A terminal style user interface to chat with AI characters.
 
 ![Demo of sentient_core in action showing interaction with the default chatbot, Vox](https://github.com/tbogdala/sentient_core/secreenshots/DemoScreencast-01.gif)
 
+
 ## Features
 
 The project is in its early stages, so some basic features may still be missing.
 
 
 ### Overall
-- [x] GGML Llama models that Rust's [rustformers llm library](https://github.com/rustformers/llm) supports.
+- [x] GGUF Llama models or any model that [Llama.cpp](https://github.com/ggerganov/llama.cpp) supports.
 - [x] GPU layer offloading for accelleration of local text generation
 - [x] Optionally use koboldcpp as a backend for text generation
 - [ ] Streaming-mode for text inference
@@ -84,8 +85,9 @@ Quick tip: all screens besides the main menu have built in help with the `?` key
 of any message box or view.
 
 The sample `config.yaml` file uses a quantized version of Nous-Hermes-13B by TheBloke and can 
-be [downloaded from this page](https://huggingface.co/TheBloke/Nous-Hermes-13B-GGML). Specifically, the configuration file
-mentions this [file](https://huggingface.co/TheBloke/Nous-Hermes-13B-GGML/resolve/main/nous-hermes-13b.ggmlv3.q4_K_M.bin?download=true). You can create the `models/TheBloke_Nous-Hermes-13B-GGML` folders next to the executable and download
+be [downloaded from this page](https://huggingface.co/TheBloke/Nous-Hermes-13B-GGUF). Specifically, the configuration file
+mentions this [file](https://huggingface.co/TheBloke/Nous-Hermes-13B-GGUF/resolve/main/Nous-Hermes-13B.Q4_K_M.gguf). 
+You can create the `models/TheBloke_/_Nous-Hermes-13B-GGUF` folders next to the executable and download
 the file to that new folder. After that running `./sentient_core -m nous-hermes-13b` should work.
 
 
@@ -196,17 +198,16 @@ participants, allowing for custom finetunes to be used for each character.
 
 ## Building from source
 
-The way the project is currently checked into github, `cublas` is enabled as a feature
-for the `llm` dependency. If that is not compatible with your needs, you will need
-to change the `Cargo.toml` file before building. 
+The way the project is currently checked into github, `cuda` is enabled as a feature
+for the llama.cpp dependency. If that is not compatible with your needs, you will need
+to change the `Cargo.toml` file before building, or pass `--no-default-features` on the command line. 
+For example, you'll need to enable the `metal` feature instead for hardware accelleration on macos. 
 
-For example, you'll need to change that to `metal` on macos. 
-As is, the project should build with accelleration for cuda compatible devices. Candle is also set to use `cuda`
-and there are no alternatives for a metal backend with that library, so just remove the feature set for MacOS builds.
-
-For Windows, I was not able to build the Candle dependency with the `cuda` feature, so you may need to disable it.
-
-Currently, Candle is only used for vector embeddings, so it should only affect sentence similarity in the prompt templates.
+The feature `sentence_similarity` uses the [Candle library](https://github.com/huggingface/candle)
+to load the BERT models for generating vector embeddings. As is, the project should build 
+including `sentence_similarity_cuda` as a default feature, allowing accelleration for cuda compatible devices.
+When other backends become available, different `sentence_similarity` feature groups will be added, but
+it is recommended to just disable the feature if it cannot be hardware accellerated.
 
 
 ```bash
@@ -232,18 +233,21 @@ RUST_LOG=debug cargo run --release -- -m nous-hermes-13b -c config.yaml 2> /dev/
 
 ## Compatible Models
 
-The current backend uses [rustformers llm library](https://github.com/rustformers/llm) and that library has not
-been updated to support the GGUF model format that was released in August of 2023, so all quantizations
-have to be done with a commit of llama.cpp from before then. I'm using [commit f31b539](https://github.com/ggerganov/llama.cpp/commit/f31b5397143009d682db90fd2a6cde83f1ef00eb) when making my own quantizations. Llama models listed as using GGML v3 or earlier should work.
+The current backend uses my fork of [rust-llama.cpp](https://github.com/tbogdala/rust-llama.cpp) 
+which wraps and embeds [llama.cpp](https://github.com/ggerganov/llama.cpp) into the binary. Currently,
+this means that sentient_core supports all of the models that llama.cpp does. At present, that means
+that for Llama models, they must be in the GGUF model format as the library doesn't support GGML and previous
+versions.
 
 
 ## Using KoboldCpp Backend
 
 [KoboldCpp](https://github.com/LostRuins/koboldcpp) can be used as a backend for text inference instead
-of using the built-in rustformers llm library. This allows for compatibility with newer GGUF models as well as Llama2 70B models.
+of using the built-in [llama.cpp](https://github.com/ggerganov/llama.cpp) support.
 
-To accomplish this, instead of specifying `path` in a named model configuration, specify `remote_path` instead, which should
-look something like `http://localhost:5001` (note: no trailing slash, but port number is included).
+To accomplish this, instead of specifying `path` in a named model configuration, specify 
+`remote_path` instead, which should look something like `http://localhost:5001` 
+(note: no trailing slash, but port number is included).
 
 
 ## Creating New Characters
@@ -256,7 +260,7 @@ The following templates are supported in prompt templates on the models in the `
 * `<|character_description|>`: The character description from the character's yaml file.
 * `<|user_description|>`: If the `user_description` field from the chatlog is set, that value be used.
 * `<|current_context|>`: The `current_context` field from the chatlog, which is populated initially with the `context` from the character file.
-* `<|similar_sentences|>`: The sentence similary results from running vector embedding searches through the log.
+* `<|similar_sentences|>`: The sentence similary results from running vector embedding searches through the log. Only include this if the `sentence_similarity` feature is enabled or else no substitution will happen.
 * `<|character_name|>`: The name of the current character to generate a response for.
 * `<|user_name|>`: The name of the user, pulled from the `display_name` field in the `config.yaml` file.
 
@@ -286,8 +290,9 @@ your prompt template to have them replaced with past chatlog items that are dete
 last response being presented to the LLM. The number of responses can be configured via the `similar_sentence_count`
 parameter in the model configuration.
 
-Currently, this is implemented with [Candle](https://github.com/huggingface/candle), but that might change depending on rustformer's 
-progress with BERT models. Because the implementation is currently in Candle, no metal accelleration exists yet.
+Currently, this is implemented with [Candle](https://github.com/huggingface/candle), but that might change
+if these models get support in [llama.cpp](https://github.com/ggerganov/llama.cpp). At present, the embeddings
+llama.cpp generates has to be with a supported model and the Llama models generate embeddings the same size as their native context (e.g. 4096 dimensional arrays for llama2 derived models) which are unwieldy.
 
 
 ## Known Issues
@@ -301,7 +306,8 @@ progress with BERT models. Because the implementation is currently in Candle, no
 * The windows platform terminal support is shakey. The built in `cmd.exe` terminal works best but doesn't
   support emotes. Alacritty doesn't appear to disable mouse support so all kinds of bad things happen with 
   unintended and unhandled mouse input.
-* Mac and Windows builds currently do not support sentence_similarity testing with vector embeddings.
+* Mac and Windows builds currently do not support hardware accellerated sentence_similarity 
+  testing with vector embeddings.
 * Error messages will corrupt the output unless stderr is redirected to another terminal or file. Eventually
   this will be handled through message boxes instead.
 

@@ -158,7 +158,10 @@ impl TerminalRenderable for LogSelectState {
                                 } else {
                                     // update the user interface by creating a new instance of
                                     // it and then ripping out the directories found and the list state
-                                    let new_lss = LogSelectState::new(self.character.clone(), self.config.clone());
+                                    let new_lss = LogSelectState::new(
+                                        self.character.clone(),
+                                        self.config.clone(),
+                                    );
                                     self.list_state = new_lss.list_state;
                                     self.logs_found = new_lss.logs_found;
                                 }

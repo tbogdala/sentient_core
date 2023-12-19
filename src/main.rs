@@ -15,6 +15,9 @@ mod log_select;
 mod main_menu;
 mod tui;
 
+#[cfg(feature = "sentence_similarity")]
+mod vector_embedding_engine;
+
 // This is how long the timeout should be in milliseconds for the terminal's backend
 const INPUT_THREAD_READ_TIMEOUT_MS: u64 = 1000 / 4;
 const UI_DRAW_TICK_RATE: u64 = 1000 / 30;

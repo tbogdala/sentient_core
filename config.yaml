@@ -103,7 +103,7 @@ parameters:
 # NOTE: Currently models have to be full paths or relative. Things like '~' are not expanded properly.
 models:
   - name: "nous-hermes-13b"
-    path: "models/TheBloke_Nous-Hermes-13B-GGML/nous-hermes-13b.ggmlv3.q4_K_M.bin"
+    path: "models/TheBloke_Nous-Hermes-13B-GGUF/Nous-Hermes-13B.Q4_K_M.gguf"
     context_size: 2048
     prompt_instruct_template: |- 
       ### Instruction:
