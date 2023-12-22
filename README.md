@@ -2,7 +2,7 @@
 
 A terminal style user interface to chat with AI characters.
 
-![Demo of sentient_core in action showing interaction with the default chatbot, Vox](https://github.com/tbogdala/sentient_core/secreenshots/DemoScreencast-01.gif)
+![Demo of sentient_core in action showing interaction with the default chatbot, Vox](https://github.com/tbogdala/sentient_core/blob/main/screenshots/DemoScreencast-01.gif)
 
 
 ## Features
