@@ -109,7 +109,7 @@ impl TerminalRenderable for LogSelectState {
                                         "Attempting to create the directory for the new chatlog",
                                     );
                                 if made_dir.is_ok() {
-                                    let new_log = ChatLog::new_with_greeting(
+                                    let mut new_log = ChatLog::new_with_greeting(
                                         &self.character,
                                         &self.config.display_name,
                                     );
@@ -285,11 +285,15 @@ impl TerminalRenderable for LogSelectState {
             })
             .collect();
 
-        let max_width = items
-            .iter()
-            .max_by(|x, y| x.width().cmp(&y.width()))
-            .unwrap()
-            .width();
+        // start with the divider length as the max width and adjust for any list items
+        let mut max_width = divider_len;
+        if !items.is_empty() {
+            max_width = items
+                .iter()
+                .max_by(|x, y| x.width().cmp(&y.width()))
+                .unwrap()
+                .width();
+        }
 
         // TODO: allow customization of 'highlight color'
         let items = List::new(items)
@@ -364,7 +368,7 @@ impl LogSelectState {
                 .recursive(true)
                 .create(&default_log_dir)
                 .unwrap();
-            let new_chatlog = ChatLog::new_with_greeting(&character, &config.display_name);
+            let mut new_chatlog = ChatLog::new_with_greeting(&character, &config.display_name);
             new_chatlog
                 .save_to_json_file(&default_log_file)
                 .context("Attempting to create a default chatlog for the character")

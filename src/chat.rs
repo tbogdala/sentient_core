@@ -120,18 +120,15 @@ impl ChatState {
     // set, then the function doesn't do anything and returns false.
     fn save_chatlog_to_last_used(&self) -> bool {
         // save the log file out if the last-used filepath was set
-        if let Some(log_filepath) = self.chatlog.get_last_used_filepath() {
-            if let Err(err) = self.chatlog.save_to_json_file(log_filepath) {
-                log::error!(
-                    "Failed to write the chatlog after receiving next text inference response: {}",
-                    err
-                );
-            } else {
-                return true;
-            }
+        if let Err(err) = self.chatlog.save_to_last_used_json_file() {
+            log::error!(
+                "Failed to write the chatlog after receiving next text inference response: {}",
+                err
+            );
+            false
+        } else {
+            true
         }
-
-        false
     }
 
     fn process_incoming_llm_engine_messages(&mut self) {

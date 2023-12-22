@@ -68,17 +68,22 @@ impl LlmEngine {
                     None => rng.gen_range(0..i32::MAX),
                 };
 
-                let model_params = ModelOptions {
+                let mut model_params = ModelOptions {
                     context_size: model_config.context_size as i32,
                     seed: this_seed,
-                    n_gpu_layers: if config.use_gpu.unwrap_or(false) {
-                        model_config.gpu_layer_count.unwrap_or(0) as i32
-                    } else {
-                        0
-                    },
+                    n_gpu_layers: 0,
                     n_batch: config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
                     ..Default::default()
                 };
+                
+                // offload layers to gpu if enabled.
+                if config.use_gpu.unwrap_or(false) {
+                    if let Some(model_specific_layer_count) =  model_config.gpu_layer_count {
+                        model_params.n_gpu_layers = model_specific_layer_count as i32;
+                    } else if let Some(config_layer_count) = config.gpu_layer_count  {
+                        model_params.n_gpu_layers = config_layer_count as i32;
+                    }
+                }
 
                 llm_model = match LLama::new(local_model_path.clone(), &model_params) {
                     Ok(m) => Some(m),

@@ -234,6 +234,10 @@ pub struct ConfigurationFile {
     // whether or not to use GPU accelleration; must also be configured right in Cargo.toml
     pub use_gpu: Option<bool>,
 
+    // the number of layers to offload to the gpu.
+    // applies only to locally hosted models and can be overriden by the specific model configuration.
+    pub gpu_layer_count: Option<usize>,
+
     // should be set to the number of cores in your cpu
     pub thread_count: Option<usize>,
 
@@ -264,6 +268,7 @@ impl Default for ConfigurationFile {
             text_to_token_ratio_prediction: None,
             maximum_new_tokens: None,
             use_gpu: Some(false),
+            gpu_layer_count: None,
             thread_count: Some(8),
             batch_size: Some(512),
             add_visual_buffer_between_chatlog_items: None,

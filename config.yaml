@@ -103,8 +103,8 @@ parameters:
 # NOTE: Currently models have to be full paths or relative. Things like '~' are not expanded properly.
 models:
   - name: "nous-hermes-13b"
-    path: "models/TheBloke_Nous-Hermes-13B-GGUF/Nous-Hermes-13B.Q4_K_M.gguf"
-    context_size: 2048
+    path: "models/TheBloke_Nous-Hermes-Llama2-GGUF/nous-hermes-llama2-13b.Q4_K_M.gguf"
+    context_size: 4096
     prompt_instruct_template: |- 
       ### Instruction:
       Continue the chat dialogue below. Write a single reply for the character named "<|character_name|>".

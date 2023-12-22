@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -284,12 +284,27 @@ impl ChatLog {
         Ok(chatlog)
     }
 
+    pub fn save_to_last_used_json_file(&self) -> Result<()> {
+        if let Some(fp) = &self.last_used_filepath {
+            let json = serde_json::to_string_pretty(self)
+                .context("Attempting to serialize the chatlog to json")?;
+            std::fs::write(fp, json).context("Attempting to write the chatlog json file")?;
+
+            Ok(())
+        } else {
+            Err(anyhow!("Last used filepath for the json chatlog is not set, so it cannot be saved with this function call."))
+        }
+    }
+
     // saves the chatlog to json text representation and writes it to a file
-    pub fn save_to_json_file(&self, fp: &PathBuf) -> Result<()> {
+    pub fn save_to_json_file(&mut self, fp: &PathBuf) -> Result<()> {
         let json = serde_json::to_string_pretty(self)
             .context("Attempting to serialize the chatlog to json")?;
         std::fs::write(fp, json).context("Attempting to write the chatlog json file")?;
 
+        // update the last used filepath
+        self.last_used_filepath = Some(fp.to_owned());
+        
         Ok(())
     }
 
