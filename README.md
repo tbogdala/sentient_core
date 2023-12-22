@@ -65,7 +65,7 @@ The project is in its early stages, so some basic features may still be missing.
 
 ## Requirements
 
-* Windows users must install [CUDA 12](https://developer.nvidia.com/cuda-downloads) from Nvidia. Version 12.3.1 works well.
+* Windows users must install [CUDA](https://developer.nvidia.com/cuda-downloads) from Nvidia. Version 11.8 has been tested to work.
 * Linux binaries were built wit CUDA 11.
 * Mac uses metal so no further libraries are needed.
 
