@@ -127,8 +127,8 @@ models than the main character!
 # ...<snip>...
 models:
   - name: "nous-hermes-13b"
-    path: "models/TheBloke_Nous-Hermes-13B-GGML/nous-hermes-13b.ggmlv3.q4_K_M.bin"
-    context_size: 2048
+    path: "models/TheBloke_Nous-Hermes-Llama2-GGUF/nous-hermes-llama2-13b.Q4_K_M.gguf"
+    context_size: 4096
     gpu_layer_count: 100
     prompt_instruct_template: |- 
       ### Instruction:
@@ -199,7 +199,7 @@ participants, allowing for custom finetunes to be used for each character.
 ## Building from source
 
 The way the project is currently checked into github, `cuda` is enabled as a feature
-for the llama.cpp dependency. If that is not compatible with your needs, you will need
+for the `rust-llama.cpp` dependency. If that is not compatible with your needs, you will need
 to change the `Cargo.toml` file before building, or pass `--no-default-features` on the command line. 
 For example, you'll need to enable the `metal` feature instead for hardware accelleration on macos. 
 
@@ -207,7 +207,8 @@ The feature `sentence_similarity` uses the [Candle library](https://github.com/h
 to load the BERT models for generating vector embeddings. As is, the project should build 
 including `sentence_similarity_cuda` as a default feature, allowing accelleration for cuda compatible devices.
 When other backends become available, different `sentence_similarity` feature groups will be added, but
-it is recommended to just disable the feature if it cannot be hardware accellerated.
+it is recommended to just disable the feature if it cannot be hardware accellerated. Currently it
+is known not to build on Windows with Cuda accelleration.
 
 
 ```bash
@@ -303,9 +304,6 @@ llama.cpp generates has to be with a supported model and the Llama models genera
   do syntax highlighting for emotes delimited by asterisks.
 * Other participants currently don't have syntax highlighting until multi-chat mode is enabled.
 * No way to cancel text generation currently.
-* The windows platform terminal support is shakey. The built in `cmd.exe` terminal works best but doesn't
-  support emotes. Alacritty doesn't appear to disable mouse support so all kinds of bad things happen with 
-  unintended and unhandled mouse input.
 * Mac and Windows builds currently do not support hardware accellerated sentence_similarity 
   testing with vector embeddings.
 * Error messages will corrupt the output unless stderr is redirected to another terminal or file. Eventually
