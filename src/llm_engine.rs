@@ -152,7 +152,11 @@ impl LlmEngine {
                                 .context("Attempting to find the model name provided in the configuration on text inferrence request")
                                 .unwrap();
 
-                            engine_state.model = None;
+                            // free the model so we got memory to load the next one
+                            if let Some(model) = engine_state.model.as_mut() {
+                                model.free_model();
+                                engine_state.model = None;
+                            }
                             engine_state.model_config = model_config.clone();
                             log::debug!(
                                 "Loading a different model for configuration: {}",
@@ -525,19 +529,6 @@ impl EngineState {
         if let Some(rep_range) = context.parameters.repeat_penalty_range {
             predict_options.repeat = rep_range as i32;
         }
-
-        // FIXME: get display name stopping working again
-        // if self.config.stop_on_display_name {
-        //     // build an array of character names to stop on for everyone
-        //     let mut stop_seqs = vec![format!("{}: ", self.config.display_name)];
-        //     stop_seqs.push(format!("{}: ", context.chatlog_owner.name));
-        //     if !context.other_participants.is_empty() {
-        //         for other in &context.other_participants {
-        //             stop_seqs.push(format!("{}: ", other.0.name));
-        //         }
-        //     }
-        //     predict_options.stop_prompts = stop_seqs;
-        // }
 
         let prompt = self.create_prompt_for_chat_input(context);
 
