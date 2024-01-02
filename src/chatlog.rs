@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    path::PathBuf, collections::HashMap,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -18,7 +18,7 @@ use candle_core::Tensor;
 #[cfg(not(feature = "sentence_similarity"))]
 type Tensor = u8;
 
-use crate::config::CharacterFileYaml;
+use crate::{config::CharacterFileYaml, memories::MemoryFile};
 
 const CURRENT_CHATLOG_VERSION: u32 = 1;
 static DEFAULT_ENTITY_NAME: &str = "Unknown";
@@ -148,6 +148,14 @@ pub struct ChatLog {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub other_participants: Option<Vec<Participant>>,
 
+    // vector of relative paths for memory files to load for this chatlog
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_files: Option<Vec<String>>,
+
+    // the loaded memory key/value pairs coming from all the files listed in memory_files
+    #[serde(skip)]
+    pub loaded_memory: HashMap<String, Vec<String>>,
+
     // the context description for this log file, and is used in prompt temlates
     // under the <|current_context|> tag.
     pub current_context: String,
@@ -167,6 +175,8 @@ impl ChatLog {
             current_context: String::new(),
             other_participants: None,
             user_description: None,
+            memory_files: None,
+            loaded_memory: HashMap::new(),
             last_used_filepath: None,
         }
     }
@@ -267,6 +277,8 @@ impl ChatLog {
             current_context: character_file.context.to_owned(),
             other_participants: None,
             user_description: None,
+            memory_files: None,
+            loaded_memory: HashMap::new(),
             last_used_filepath: None,
         }
     }
@@ -281,8 +293,22 @@ impl ChatLog {
         // update the last used filepath
         chatlog.last_used_filepath = Some(fp.to_owned());
 
+        // now try to load any additional memory files
+        if let Some(memory_files) = &chatlog.memory_files {
+            for memory_file in memory_files {
+                let memory_fp = fp.with_file_name(memory_file);
+                let memory_file = MemoryFile::load_from_file(&memory_fp)?;
+                // for each memory, add it into the loaded memory hashmap
+                for memory in &memory_file.memories {
+                    let mem_value = chatlog.loaded_memory.entry(memory.key.clone()).or_default();
+                    mem_value.push(memory.value.clone());
+                }
+            }
+        }
+
         Ok(chatlog)
     }
+
 
     pub fn save_to_last_used_json_file(&self) -> Result<()> {
         if let Some(fp) = &self.last_used_filepath {

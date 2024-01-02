@@ -25,6 +25,7 @@ pub const DEFAULT_NUM_OF_SENTENCE_MATCHES: usize = 3;
 
 pub const DEFAULT_TEXT_TO_TOKEN_RATIO: f32 = 3.0;
 pub const DEFAULT_MAX_NEW_TOKENS: usize = 150;
+pub const DEFAULT_MEMORY_MAX_CONTEXT: f32 = 0.1;
 pub const DEFAULT_BATCH_SIZE: usize = 8;
 pub const DEFAULT_THREAD_COUNT: usize = 8;
 
@@ -75,6 +76,14 @@ impl LlmEngine {
                     n_batch: config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
                     ..Default::default()
                 };
+                
+                if let Some(freq) = model_config.rope_freq {
+                    model_params.rope_freq_base = freq;
+                }
+                if let Some(scale) = model_config.rope_scale {
+                    // this mirrors the `rope_scale` parameter behavior in llama.cpp (not the `rope_freq_scale` parameter)
+                    model_params.rope_freq_scale = 1.0 / scale;
+                }
                 
                 // offload layers to gpu if enabled.
                 if config.use_gpu.unwrap_or(false) {
@@ -272,6 +281,13 @@ impl EngineState {
     // given the string a user inputs, turn that into the whole
     // prompt that is given to the engine
     fn create_prompt_for_chat_input(&self, context: &mut TextInferenceContext) -> String {
+        // get the current ratio used to predict how well text is going to compress down into tokens
+        // so that the context memory can get maximized.
+        let text2token_ratio: f32 = self
+            .config
+            .text_to_token_ratio_prediction
+            .unwrap_or(DEFAULT_TEXT_TO_TOKEN_RATIO);
+
         // and then create the system message with the context for the bot
         let mut buf = String::new();
         buf.push_str(self.model_config.prompt_instruct_template.as_str());
@@ -310,6 +326,42 @@ impl EngineState {
             }
         }
 
+        // memory matching is requested so see if the keys show up at all in the last message
+        // TODO: consider searching more than the last message
+        if buf.contains("<|memory_matches|>") {
+            let memory_max_pct= self.config.memory_max_context_percentage.unwrap_or(DEFAULT_MEMORY_MAX_CONTEXT);
+            let memory_max_characters = (memory_max_pct * self.model_config.context_size as f32) * text2token_ratio;
+            log::debug!("memory_max_character: {}", memory_max_characters);
+            let mut memories: String = String::new();
+
+            // FIXME: wont work right for continuing prompts
+            if let Some(last_cli) = context.chatlog.last() {
+                let last_message = last_cli.get_name_and_items_as_string();
+                
+                let mut done_building_memories = false;
+                for (memory_key, memory_values) in &context.chatlog.loaded_memory {
+                    if last_message.contains(memory_key) {
+                        for memory_value in memory_values {
+                            if (memory_max_characters as usize) < memories.len() + memory_value.len() {
+                                done_building_memories = true;
+                                break;
+                            }
+                            if memories.is_empty() {
+                                memories.push_str("Memories:")
+                            }
+                            memories.push_str("\n");
+                            memories.push_str(memory_value);
+                        }
+                    }
+                    if done_building_memories {
+                        break;
+                    }
+                }
+            }
+
+            buf = buf.replace("<|memory_matches|>", memories.as_str());
+        }
+
         buf = buf.replace("<|character_name|>", &context.character.name);
         buf = buf.replace("<|user_name|>", &self.config.display_name);
 
@@ -318,13 +370,6 @@ impl EngineState {
         let mut continue_line = String::new();
 
         // now we reverse walk the conversation chain and stack in more message history
-
-        // get the current ratio used to predict how well text is going to compress down into tokens
-        // so that the context memory can get maximized.
-        let text2token_ratio: f32 = self
-            .config
-            .text_to_token_ratio_prediction
-            .unwrap_or(DEFAULT_TEXT_TO_TOKEN_RATIO);
 
         // pull the requested max new token count from the configuration
         let token_count = self
@@ -494,6 +539,14 @@ impl EngineState {
                 .unwrap_or(DEFAULT_MAX_NEW_TOKENS) as i32,
             ..Default::default()
         };
+
+        if let Some(freq) = self.model_config.rope_freq {
+            predict_options.rope_freq_base = freq;
+        }
+        if let Some(scale) = self.model_config.rope_scale {
+            // this mirrors the `rope_scale` parameter behavior in llama.cpp (not the `rope_freq_scale` parameter)
+            predict_options.rope_freq_scale = 1.0 / scale;
+        }
 
         // Setup all the sampler options, overriding the defaults presented by
         // the library if they're configured in the parameter set.

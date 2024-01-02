@@ -28,6 +28,10 @@ stop_on_display_name: true
 
 # Maximum number of new tokens to budget for when building the prompt.
 #maximum_new_tokens: 100
+   
+# Specifies the percentage (0.0-1.0) of the context the memories are allowed to fillup.
+# E.g. setting this to 0.1 will allow up to approximately 10% of the context_size for a configured model.
+#memory_max_context_percentage: 0.1
 
 # By default, it's configured towards CPU friendly settings:
 #     use_gpu=false, batch_size=8, thread_count=8
