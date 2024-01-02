@@ -1,4 +1,4 @@
-# Sentient Core Development Preview v0.2.0
+# Sentient Core Development Preview v0.3.0
 
 A terminal style user interface to chat with AI characters.
 
@@ -141,6 +141,14 @@ models:
       <|character_name|>: 
 # ...<snip>...
 ```
+
+### Advanced Configuration
+
+Models can be configured to use an extended context size by adjusting their rope scale using the model's
+`rope_scale` parameter. This mirrors's [the llama.cpp documentation](https://github.com/ggerganov/llama.cpp/tree/master/examples/main#extended-context-size)
+for the similarly named parameter. If you wish to adjust the frequency for whatever reason,
+that can be set with the `rope_freq` parameter.
+
 
 ## Interface Reference
 
@@ -307,6 +315,9 @@ llama.cpp generates has to be with a supported model and the Llama models genera
   testing with vector embeddings.
 * Error messages will corrupt the output unless stderr is redirected to another terminal or file. Eventually
   this will be handled through message boxes instead.
+* The new rust-llama.cpp backend implementation will sometimes cause a crash on a bad UTF-8 boundary,
+  and this will be corrected soon.
+* The memory feature needs to be documented once its feature set stabilizes.
 
 
 ## Caveats

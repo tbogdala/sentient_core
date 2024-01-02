@@ -14,6 +14,7 @@ mod llm_engine;
 mod log_select;
 mod main_menu;
 mod tui;
+mod memories;
 
 #[cfg(feature = "sentence_similarity")]
 mod vector_embedding_engine;

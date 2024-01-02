@@ -116,6 +116,12 @@ pub struct ConfiguredLlm {
     // how much room to budget for a complete context
     pub context_size: usize,
 
+    // RoPE base frequency, when absent it should pull the value from the model
+    pub rope_freq: Option<f32>,
+
+    // RoPE frequency scaling factor, when absent it should pull the value from the model
+    pub rope_scale: Option<f32>,
+
     // the number of similar chat log items to pull up using vector embeddings,
     // which requires a configured vector embedding model in the configuration.
     pub similar_sentence_count: Option<usize>,
@@ -223,6 +229,10 @@ pub struct ConfigurationFile {
     // if true, this will trim the text inferrence to just before the first usage of " {display_name}:"
     pub stop_on_display_name: bool,
 
+    // specifies the percentage (0.0-1.0) of the context the memories are allowed to fillup.
+    // E.g. setting this to 0.1 will allow up to approximately 10% of the context_size for a configured model.
+    pub memory_max_context_percentage: Option<f32>,
+
     // the current prediction multiplier representing the mount of text characters per token, on average,
     // after tokenization. used to predict how much can be added to the chat history buff and still keep
     // the requested token window size open.
@@ -267,6 +277,7 @@ impl Default for ConfigurationFile {
             progress_secondary_rgb: None,
             text_to_token_ratio_prediction: None,
             maximum_new_tokens: None,
+            memory_max_context_percentage: None,
             use_gpu: Some(false),
             gpu_layer_count: None,
             thread_count: Some(8),
