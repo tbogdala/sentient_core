@@ -1,6 +1,6 @@
 [package]
 name = "sentient_core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Timothy Bogdala <tdb@animal-machine.com>"]
 description = "A terminal interface for chatting with AI."

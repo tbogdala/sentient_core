@@ -19,9 +19,9 @@ The project is in its early stages, so some basic features may still be missing.
 ### Chatting
 
 - [x] loading text-generation-webui yaml files for characters
-- [x] log scrolling ('j'/'k' key commands)
+- [x] log scrolling ('j'/'k' key commands or up/down arrows)
 - [x] create replies to the bot ('r' key command)
-- [x] switch between parameter configuration sets ('p' key command, then 'h'/'l' to swtich between)
+- [x] switch between parameter configuration sets ('p' key command, then 'h'/'l' (or left/right arrows) to swtich between)
 - [x] saving and switching between multiple chat logs for a character ('ctrl-n' in the log selector menu creates a new log)
 - [x] duplicating chat logs ('ctrl-d' in the log selector menu creates a duplcicate copy of the log)
 - [x] regenerate ('ctrl+r' key command)

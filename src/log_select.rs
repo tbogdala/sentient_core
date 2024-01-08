@@ -177,9 +177,9 @@ impl TerminalRenderable for LogSelectState {
                     return ProcessInputResult::ChangeScene(
                         crate::application::ApplicationState::CharacterSelect,
                     );
-                } else if key.code == KeyCode::Char('k') {
+                } else if key.code == KeyCode::Char('k') || key.code == KeyCode::Up {
                     self.list_state.previous()
-                } else if key.code == KeyCode::Char('j') {
+                } else if key.code == KeyCode::Char('j') || key.code == KeyCode::Down {
                     self.list_state.next()
                 } else if key.code == KeyCode::Enter {
                     // load the chatlog up and pass it to the chat interface
@@ -245,13 +245,13 @@ impl TerminalRenderable for LogSelectState {
                         self.log_basic_editor = Some((LogSelectEditorState::DupeLogFilename, ce));
                     }
                 } else if key.code == KeyCode::Char('?') {
-                    let help_strings = "j      = move down\n\
-                                        k      = move up\n\
-                                        enter  = load selected chatlog\n\
-                                        esc    = go back to character select\n\
-                                        ctrl-n = create a new chatlog\n\
-                                        ctrl-d = duplicate existing chatlog with a new name\n\
-                                        ctrl-o = export selected chatlog as a training dataset\n";
+                    let help_strings = "j or down-arrow  = move down\n\
+                                        k or up-arrow    = move up\n\
+                                        enter            = load selected chatlog\n\
+                                        esc              = go back to character select\n\
+                                        ctrl-n           = create a new chatlog\n\
+                                        ctrl-d           = duplicate existing chatlog with a new name\n\
+                                        ctrl-o           = export selected chatlog as a training dataset\n";
 
                     // show the dialog to create a new log
                     let modal =

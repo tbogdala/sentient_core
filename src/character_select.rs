@@ -38,15 +38,15 @@ impl TerminalRenderable for CharacterSelectState {
                 return ProcessInputResult::ChangeScene(
                     crate::application::ApplicationState::MainMenu,
                 );
-            } else if key.code == KeyCode::Char('k') {
+            } else if key.code == KeyCode::Char('k') || key.code == KeyCode::Up {
                 self.list_state.previous()
-            } else if key.code == KeyCode::Char('j') {
+            } else if key.code == KeyCode::Char('j') || key.code == KeyCode::Down {
                 self.list_state.next()
             } else if key.code == KeyCode::Char('?') {
-                let help_strings = "j      = move down\n\
-                                    k      = move up\n\
-                                    enter  = load selected character\n\
-                                    esc    = go back to main menu\n";
+                let help_strings = "j or down-arrow  = move down\n\
+                                    k or up-arrow    = move up\n\
+                                    enter            = load selected character\n\
+                                    esc              = go back to main menu\n";
 
                 // show the dialog to create a new log
                 let modal = MessageBoxModalWidget::new("Command Reference:", help_strings, 60, 60);

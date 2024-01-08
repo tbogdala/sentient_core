@@ -175,7 +175,7 @@ impl ChatState {
                 KeyCode::Enter => {
                     self.editing_parameters = false;
                 }
-                KeyCode::Char('h') => {
+                KeyCode::Char('h') | KeyCode::Left => {
                     for (i, pset) in self.config.parameters.iter().enumerate() {
                         if self
                             .current_parameters
@@ -191,7 +191,7 @@ impl ChatState {
                         }
                     }
                 }
-                KeyCode::Char('l') => {
+                KeyCode::Char('l') | KeyCode::Right => {
                     for (i, pset) in self.config.parameters.iter().enumerate() {
                         if self
                             .current_parameters
@@ -392,9 +392,9 @@ impl ChatState {
                 }
             } else if key.code == KeyCode::Char('p') {
                 self.editing_parameters = true;
-            } else if key.code == KeyCode::Char('j') {
+            } else if key.code == KeyCode::Char('j') || key.code == KeyCode::Down {
                 self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
-            } else if key.code == KeyCode::Char('k') {
+            } else if key.code == KeyCode::Char('k') || key.code == KeyCode::Up {
                 if self.chatlog_scroll > 0 {
                     self.chatlog_scroll -= 1;
                 }
@@ -464,8 +464,8 @@ impl ChatState {
                         "Multi-chat Mode disabled! Chat responses will be automatically generated for the main character.", 60, 30));
                 }
             } else if key.code == KeyCode::Char('?') {
-                let help_strings = "j      = scroll chatlog down\n\
-                                    k      = scroll chatlog up\n\
+                let help_strings = "j or down-arrow  = scroll chatlog down\n\
+                                    k or up-arrow    = scroll chatlog up\n\
                                     r      = type a new message to the AI (esc to cancel)\n\
                                     ctrl-r = regenerate the AI's last response\n\
                                     ctrl-t = continues the AI's last response\n\
@@ -481,8 +481,8 @@ impl ChatState {
                                     <2-0>  = generate a reply for subesquent 'other participants'\n\
                                     \n\
                                     p      = select a parameter configuration for inference\n\
-                                    h      = select parameter config to the left\n\
-                                    l      = select parameter config to the right";
+                                    h or left-arrow   = select parameter config to the left\n\
+                                    l or right-arrow  = select parameter config to the right";
 
                 // show the dialog to create a new log
                 let modal = MessageBoxModalWidget::new("Command Reference:", help_strings, 60, 60);
