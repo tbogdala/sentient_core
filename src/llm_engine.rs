@@ -184,7 +184,7 @@ impl LlmEngine {
                                     None => engine_state.rng.gen_range(0..i32::MAX),
                                 };
 
-                                let model_params = ModelOptions {
+                                let mut model_params = ModelOptions {
                                     context_size: model_config.context_size as i32,
                                     seed: this_seed,
                                     n_gpu_layers: if engine_state.config.use_gpu.unwrap_or(false) {
@@ -199,7 +199,15 @@ impl LlmEngine {
                                         as i32,
                                     ..Default::default()
                                 };
-
+                                
+                                if let Some(freq) = model_config.rope_freq {
+                                    model_params.rope_freq_base = freq;
+                                }
+                                if let Some(scale) = model_config.rope_scale {
+                                    // this mirrors the `rope_scale` parameter behavior in llama.cpp (not the `rope_freq_scale` parameter)
+                                    model_params.rope_freq_scale = 1.0 / scale;
+                                }
+                
                                 engine_state.model =
                                     match LLama::new(local_model_path.clone(), &model_params) {
                                         Ok(m) => Some(m),
