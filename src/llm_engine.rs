@@ -76,7 +76,7 @@ impl LlmEngine {
                     n_batch: config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
                     ..Default::default()
                 };
-                
+
                 if let Some(freq) = model_config.rope_freq {
                     model_params.rope_freq_base = freq;
                 }
@@ -84,12 +84,12 @@ impl LlmEngine {
                     // this mirrors the `rope_scale` parameter behavior in llama.cpp (not the `rope_freq_scale` parameter)
                     model_params.rope_freq_scale = 1.0 / scale;
                 }
-                
+
                 // offload layers to gpu if enabled.
                 if config.use_gpu.unwrap_or(false) {
-                    if let Some(model_specific_layer_count) =  model_config.gpu_layer_count {
+                    if let Some(model_specific_layer_count) = model_config.gpu_layer_count {
                         model_params.n_gpu_layers = model_specific_layer_count as i32;
-                    } else if let Some(config_layer_count) = config.gpu_layer_count  {
+                    } else if let Some(config_layer_count) = config.gpu_layer_count {
                         model_params.n_gpu_layers = config_layer_count as i32;
                     }
                 }
@@ -199,7 +199,7 @@ impl LlmEngine {
                                         as i32,
                                     ..Default::default()
                                 };
-                                
+
                                 if let Some(freq) = model_config.rope_freq {
                                     model_params.rope_freq_base = freq;
                                 }
@@ -207,7 +207,7 @@ impl LlmEngine {
                                     // this mirrors the `rope_scale` parameter behavior in llama.cpp (not the `rope_freq_scale` parameter)
                                     model_params.rope_freq_scale = 1.0 / scale;
                                 }
-                
+
                                 engine_state.model =
                                     match LLama::new(local_model_path.clone(), &model_params) {
                                         Ok(m) => Some(m),
@@ -337,20 +337,26 @@ impl EngineState {
         // memory matching is requested so see if the keys show up at all in the last message
         // TODO: consider searching more than the last message
         if buf.contains("<|memory_matches|>") {
-            let memory_max_pct= self.config.memory_max_context_percentage.unwrap_or(DEFAULT_MEMORY_MAX_CONTEXT);
-            let memory_max_characters = (memory_max_pct * self.model_config.context_size as f32) * text2token_ratio;
+            let memory_max_pct = self
+                .config
+                .memory_max_context_percentage
+                .unwrap_or(DEFAULT_MEMORY_MAX_CONTEXT);
+            let memory_max_characters =
+                (memory_max_pct * self.model_config.context_size as f32) * text2token_ratio;
             log::debug!("memory_max_character: {}", memory_max_characters);
             let mut memories: String = String::new();
 
             // FIXME: wont work right for continuing prompts
             if let Some(last_cli) = context.chatlog.last() {
                 let last_message = last_cli.get_name_and_items_as_string();
-                
+
                 let mut done_building_memories = false;
                 for (memory_key, memory_values) in &context.chatlog.loaded_memory {
                     if last_message.contains(memory_key) {
                         for memory_value in memory_values {
-                            if (memory_max_characters as usize) < memories.len() + memory_value.len() {
+                            if (memory_max_characters as usize)
+                                < memories.len() + memory_value.len()
+                            {
                                 done_building_memories = true;
                                 break;
                             }

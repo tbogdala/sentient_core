@@ -1,10 +1,11 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf, collections::HashMap,
+    path::PathBuf,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -309,7 +310,6 @@ impl ChatLog {
         Ok(chatlog)
     }
 
-
     pub fn save_to_last_used_json_file(&self) -> Result<()> {
         if let Some(fp) = &self.last_used_filepath {
             let json = serde_json::to_string_pretty(self)
@@ -330,7 +330,7 @@ impl ChatLog {
 
         // update the last used filepath
         self.last_used_filepath = Some(fp.to_owned());
-        
+
         Ok(())
     }
 

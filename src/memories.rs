@@ -1,6 +1,6 @@
-use std::{io::BufReader, fs::File, path::PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::{fs::File, io::BufReader, path::PathBuf};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MemoryFile {

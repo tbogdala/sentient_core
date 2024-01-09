@@ -18,6 +18,20 @@ use crate::tui::{
     TerminalEvent, TerminalRenderable, TextEditingBlockModalWidget,
 };
 
+// This enum is used to identify how the editor_widget should behave so that only
+// one widget is needed, since it's modal anyway.
+enum ChatEditorState {
+    // contains the modal dialog widget used to update the chatlog context
+    ChatlogContext,
+
+    // contains the modal dialog widget used to update the user's description context
+    UserDescription,
+
+    // contains the modal dialog widget used to update the chatlog item that
+    // is 'current' - as determined by the 'chatlog_scroll` member
+    ChatlogItem,
+}
+
 pub struct ChatState {
     // a copy of the configuration file passed into the UI at creation
     config: ConfigurationFile,
@@ -51,15 +65,9 @@ pub struct ChatState {
     // contains a modal dialog widget used to show a message or alert to the user
     modal_messagebox: Option<MessageBoxModalWidget>,
 
-    // contains the modal dialog widget used to update the chatlog context
-    context_editor: Option<TextEditingBlockModalWidget>,
-
-    // contains the modal dialog widget used to update the user's description context
-    userdesc_editor: Option<TextEditingBlockModalWidget>,
-
-    // contains the modal dialog widget used to update the chatlog item that
-    // is 'current' - as determined by the 'chatlog_scroll` member
-    logitem_editor: Option<TextEditingBlockModalWidget>,
+    // a tuple that may be the active editor widget, with the intended behavior
+    // being indicated by the ChatEditorState enum.
+    editor_widget: Option<(ChatEditorState, TextEditingBlockModalWidget)>,
 }
 impl ChatState {
     // Creates a new ChatState for the selected character.
@@ -109,9 +117,7 @@ impl ChatState {
             waiting_for_character: None,
             progress_widget: None,
             modal_messagebox: None,
-            context_editor: None,
-            userdesc_editor: None,
-            logitem_editor: None,
+            editor_widget: None,
         }
     }
 
@@ -412,13 +418,13 @@ impl ChatState {
                     let user_desc = self.chatlog.user_description.clone().unwrap_or_default();
                     let ce =
                         TextEditingBlockModalWidget::new("User Description".to_owned(), user_desc);
-                    self.userdesc_editor = Some(ce);
+                    self.editor_widget = Some((ChatEditorState::UserDescription, ce));
                 } else {
                     let ce = TextEditingBlockModalWidget::new(
                         "Conversation Context".to_owned(),
                         self.chatlog.current_context.to_owned(),
                     );
-                    self.context_editor = Some(ce);
+                    self.editor_widget = Some((ChatEditorState::ChatlogContext, ce));
                 }
             } else if key.code == KeyCode::Char('e') {
                 let index = self.get_currently_select_chatlogitem_index();
@@ -427,7 +433,7 @@ impl ChatState {
                         "Edit Message".to_owned(),
                         cli.get_items_as_string(),
                     );
-                    self.logitem_editor = Some(ce);
+                    self.editor_widget = Some((ChatEditorState::ChatlogItem, ce));
                 } else {
                     log::error!("Failed to get the chatlog item at index {}", index);
                 }
@@ -795,63 +801,59 @@ impl TerminalRenderable for ChatState {
             if msgbox.is_finished {
                 self.modal_messagebox = None;
             }
-        } else if let Some(logitem_editor) = self.logitem_editor.as_mut() {
-            logitem_editor.process_input(event);
-            if logitem_editor.is_finished {
-                if logitem_editor.is_success {
-                    // if the editted string is empty, then just remove the chatlogitem
-                    if logitem_editor.text.is_empty() {
-                        self.chatlog.remove(index);
-                    } else {
-                        // if we made an edit, replace the strings in the chatlogitem
-                        // and then attempt to save the logfile to secure the edits
-                        if let Some(cli) = self.chatlog.get_mut(index) {
-                            cli.replace_items_with_string(logitem_editor.text.to_string());
-                        } else {
-                            log::error!("Failed to update the log after editing a chatlog item. No change has been made in the log.");
+        } else if let Some((editor_type, editor)) = self.editor_widget.as_mut() {
+            editor.process_input(event);
+            if editor.is_finished {
+                if editor.is_success {
+                    match editor_type {
+                        ChatEditorState::ChatlogItem => {
+                            // if the editted string is empty, then just remove the chatlogitem
+                            if editor.text.is_empty() {
+                                self.chatlog.remove(index);
+                            } else {
+                                // if we made an edit, replace the strings in the chatlogitem
+                                // and then attempt to save the logfile to secure the edits
+                                if let Some(cli) = self.chatlog.get_mut(index) {
+                                    cli.replace_items_with_string(editor.text.to_string());
+                                } else {
+                                    log::error!("Failed to update the log after editing a chatlog item. No change has been made in the log.");
+                                }
+                            }
+
+                            if !self.save_chatlog_to_last_used() {
+                                log::error!(
+                                    "Failed to save the chatlog to the last used file ({:?}) after an edit",
+                                    self.chatlog.get_last_used_filepath()
+                                );
+                            }
+                        }
+
+                        ChatEditorState::ChatlogContext => {
+                            self.chatlog.current_context = editor.text.to_owned();
+
+                            // attempt to save the changes to the chatlog
+                            if !self.save_chatlog_to_last_used() {
+                                log::error!("Failed to save the chatlog to the last used file ({:?}) after editing the context.", 
+                                    self.chatlog.get_last_used_filepath());
+                            }
+                        }
+
+                        ChatEditorState::UserDescription => {
+                            if editor.text.is_empty() {
+                                self.chatlog.user_description = None;
+                            } else {
+                                self.chatlog.user_description = Some(editor.text.to_owned());
+                            }
+
+                            // attempt to save the changes to the chatlog
+                            if !self.save_chatlog_to_last_used() {
+                                log::error!("Failed to save the chatlog to the last used file ({:?}) after editing the user description.", 
+                                    self.chatlog.get_last_used_filepath());
+                            }
                         }
                     }
-
-                    if !self.save_chatlog_to_last_used() {
-                        log::error!(
-                            "Failed to save the chatlog to the last used file ({:?}) after an edit",
-                            self.chatlog.get_last_used_filepath()
-                        );
-                    }
                 }
-                self.logitem_editor = None;
-            }
-        } else if let Some(editor) = self.context_editor.as_mut() {
-            editor.process_input(event);
-            if editor.is_finished {
-                if editor.is_success {
-                    self.chatlog.current_context = editor.text.to_owned();
-                }
-                self.context_editor = None;
-
-                // attempt to save the changes to the chatlog
-                if !self.save_chatlog_to_last_used() {
-                    log::error!("Failed to save the chatlog to the last used file ({:?}) after editing the context.", 
-                        self.chatlog.get_last_used_filepath());
-                }
-            }
-        } else if let Some(editor) = self.userdesc_editor.as_mut() {
-            editor.process_input(event);
-            if editor.is_finished {
-                if editor.is_success {
-                    if editor.text.is_empty() {
-                        self.chatlog.user_description = None;
-                    } else {
-                        self.chatlog.user_description = Some(editor.text.to_owned());
-                    }
-                }
-                self.userdesc_editor = None;
-
-                // attempt to save the changes to the chatlog
-                if !self.save_chatlog_to_last_used() {
-                    log::error!("Failed to save the chatlog to the last used file ({:?}) after editing the user description.", 
-                        self.chatlog.get_last_used_filepath());
-                }
+                self.editor_widget = None;
             }
         } else if self.editing_parameters {
             self.process_input_for_editing_parameters(event);
@@ -941,17 +943,7 @@ impl TerminalRenderable for ChatState {
 
         if let Some(msgbox) = &self.modal_messagebox {
             msgbox.render(frame);
-        }
-        // user is editing a chatlog item
-        else if let Some(editor) = &self.logitem_editor {
-            editor.render(frame);
-        }
-        // user is editing the context
-        else if let Some(editor) = &self.context_editor {
-            editor.render(frame);
-        }
-        // user is editing the description they use in the chatlog
-        else if let Some(editor) = &self.userdesc_editor {
+        } else if let Some((_, editor)) = &self.editor_widget {
             editor.render(frame);
         }
         // if we're showing the parameters, create a new frame for it.

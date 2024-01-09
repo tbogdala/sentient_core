@@ -13,8 +13,8 @@ mod config;
 mod llm_engine;
 mod log_select;
 mod main_menu;
-mod tui;
 mod memories;
+mod tui;
 
 #[cfg(feature = "sentence_similarity")]
 mod vector_embedding_engine;
