@@ -38,6 +38,8 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] multiline input is supported by ending a line with "\n" and hitting enter.
 - [x] 'multi-chat' mode ('m' key) allowing the user to ('r') reply as themselves or click a number 1-9 to reply
       as another participant. The '1' key is bound to the character owning the chatlog file.
+- [ ] command interface to input special instructions such as getting or setting variables used in text generation (in active development)
+- [x] emotional boosting characters to be biased towards specified emotions (by setting the variable 'emotional_boosts' or shorthand, 'eb')
 
 
 ### Configuration
@@ -52,6 +54,7 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] configurable display name
 - [x] configurable colors in the chatlog for user, bot, normal text and quoted text
 - [x] user descriptions stored in the chatlog so they can change for the context of the log
+- [x] memory file support (AKA 'lorebooks' or 'world info')
 
 
 ### General Features
@@ -60,7 +63,7 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] vector embedding support for sentence similarity testing against the chatlog (only cuda accelleration for now)
 - [ ] spellchecker integration
 - [ ] import/export plaintext logs
-- [ ] export datasets from chatlogs
+- [x] export datasets from chatlogs
 
 
 ## Requirements
@@ -174,7 +177,7 @@ In this example below, `char1.yaml` would be two directories up from this log fi
 all of your character yaml files are stored. `char2.yaml` shows that you can place the character files
 right in the log directory to keep it organized that way if desired.
 
-```yaml
+```json
 {
   "version": 1,
   "other_participants": [
@@ -191,7 +194,7 @@ right in the log directory to keep it organized that way if desired.
 Additionally, you can specify a model configuration to use to generate the response for the other
 participants, allowing for custom finetunes to be used for each character. 
 
-```yaml
+```json
   # ...<snip>...
   "other_participants": [
     {
@@ -200,7 +203,109 @@ participants, allowing for custom finetunes to be used for each character.
     }
   ],
   # ...<snip>...
-  ```
+```
+
+
+## Advanced Template Options
+
+### Character Memory Files
+
+A very handy feature to have is the Memory File support for characters. This is a separate JSON file that consists
+simply of a `memories` field that is an array of objects. Each of these objects has a `key` and `value` field. The
+`key` fields are search for in the relevant chatlog entries (Note: Currently only the last chatlog entry), and if
+it occurs, then the `value` field's text will get included in the `<|memory_matches|>` field in the prompt for the model.
+
+An example of a memory file would look like this:
+
+```json
+{
+    "memories": [
+      { 
+            "key": "SentientCore",
+            "value": "SentientCore is the AI software that is the software currently running this holodeck and allows for all of the human and AI interaction."
+      }
+    ]
+}
+```
+
+#### Usage
+
+Using this example Memory File, if the user replies to the character and mentions 'SentientCore' (case-sensitive) anywhere 
+in the reply, the value text will get added to the `<|memory_matches|>` template parameter.
+
+In order to have the Memory File actually loaded and searched, **it needs to be manually included in the chat log**.
+In the `log.json` file for the chatlog, add the following field to the root object of the chatlog (parallel to other 
+fields like `current_context` and `items`):
+
+```json
+  # ...<snip>...
+  "memory_files": [
+    "memories.json"
+  ],
+  # ...<snip>...
+```
+
+Multiple memory files are supported. Multiple entries for the same `key` are supported and all will get potentially included.
+
+In order to prevent the memories from taking over all the space available in the context, there's a built in limit of 10% of
+the context. If a memory isn't estimated to fit in that amount of tokens, it won't be included and further memory processing 
+is halted. The size of this limit can be configured in the main `config.yaml` file using the `memory_max_context_percentage`
+field, which defaults to `0.1` for 10%. Setting it to `0.05` would limit it to 5% instead, for example.
+
+### Emotional Boosts
+
+Another prompt template idea is the notion of specifying 'emotional boosts' to help flavor the generated text. This
+way the character file doesn't need to change, only the desired changes to emotions to help direct the LLM
+neural net in the direction of your choosing. A default set of emotional boosts can be defined in the character YAML files
+by adding the `emotional_boosts` field and setting it to a string. An example of this has been added to the default
+character of SentientCore: Vox!
+
+```yaml
+emotional_boosts: "Quite Empathetic, Quite Relaxed, Slightly Confident"
+```
+
+When chatting with a character, the emotional boosts can be changed using the Editor Command Interface by setting
+the `emotional_boosts` variable, or using it's shortcut: `eb`.
+
+
+
+## Editor Command Interface
+
+You can enter commands to control the chat interface by bringing up the command interface box with the '/' key.
+which will bring up a window in which to type the command. This feature is in active development and will be 
+expanded on further. 
+
+In general, after specifying a command, an optional character number to use as the target can be supplied. If
+this is omitted, the main owning character of the chatlog is used. Otherwise, in multi-chat mode, you can specify
+the main character as `1` and other participating characters in order of their definition in the chatlog file, starting
+with number `2`.
+
+
+### Command Reference
+
+Below are the commands the command interface window will accept:
+
+#### get
+
+syntax: `get <character_num>? <variable_name>`
+
+This command returns the value of the variable in a message box. If the variable is something associated 
+with a character, it will default to `character_num` 1 unless specified otherwise. 
+
+#### set
+
+syntax: `set <character_num>? <variable_name> ...`
+
+This command set the value of the variable in a message box. If the variable is something associated 
+with a character, it will default to `character_num` 1 unless specified otherwise. 
+
+### Variable Reference
+
+#### emotional_boosts ("eb")
+
+This variable is accessed from the specified character. For example `set 1 emotional_boosts Very Calm` 
+will set the `emotional_boosts` field of that character to `"Very Calm"`.
+
 
 
 ## Building from source

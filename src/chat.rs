@@ -21,15 +21,17 @@ use crate::tui::{
 // This enum is used to identify how the editor_widget should behave so that only
 // one widget is needed, since it's modal anyway.
 enum ChatEditorState {
-    // contains the modal dialog widget used to update the chatlog context
+    // used to update the chatlog context
     ChatlogContext,
 
-    // contains the modal dialog widget used to update the user's description context
+    // used to update the user's description context
     UserDescription,
 
-    // contains the modal dialog widget used to update the chatlog item that
-    // is 'current' - as determined by the 'chatlog_scroll` member
+    // used to update the chatlog item that is 'current' - as determined by the 'chatlog_scroll` member
     ChatlogItem,
+
+    // used to input a 'command' to sentient_core itself as if from a developer console
+    SlashCommand,
 }
 
 pub struct ChatState {
@@ -469,6 +471,10 @@ impl ChatState {
                         "Information", 
                         "Multi-chat Mode disabled! Chat responses will be automatically generated for the main character.", 60, 30));
                 }
+            } else if key.code == KeyCode::Char('/') {
+                let ce =
+                    TextEditingBlockModalWidget::new("Execute Command".to_owned(), "".to_string());
+                self.editor_widget = Some((ChatEditorState::SlashCommand, ce));
             } else if key.code == KeyCode::Char('?') {
                 let help_strings = "j or down-arrow  = scroll chatlog down\n\
                                     k or up-arrow    = scroll chatlog up\n\
@@ -480,6 +486,7 @@ impl ChatState {
                                     o      = set the current context description for the chatlog\n\
                                     ctrl-o = regenerate the AI's last response\n\
                                     e      = edit the currently selected chatlog item\n\
+                                    /      = execute an editor command
                                     esc    = exit back to the main menu\n\
                                     \n\
                                     m      = enter multi-chat mode\n\
@@ -532,7 +539,7 @@ impl ChatState {
 
                             let context = TextInferenceContext {
                                 character: other_char.0.clone(),
-                                model_config_override: model_config_override,
+                                model_config_override,
                                 chatlog_owner: self.character.clone(),
                                 other_participants: self.other_participants.clone(),
                                 chatlog: self.chatlog.clone(),
@@ -786,6 +793,177 @@ impl ChatState {
     fn get_currently_select_chatlogitem_index(&self) -> usize {
         self.chatlog.len() - self.chatlog_scroll - 1
     }
+
+    // main function to call to process any 'slash commands' the user types in
+    fn process_slash_command(&mut self, user_cmd_str: &str) {
+        // sanity checks
+        if user_cmd_str.is_empty() {
+            return;
+        }
+
+        // break the commands up by whitespace
+        let cmd_split: Vec<&str> = user_cmd_str.split_whitespace().collect();
+        if cmd_split.len() < 1 {
+            return;
+        }
+
+        let mut character_selection: u8 = 1;
+        let mut params: Vec<&str> = Vec::new();
+
+        // if the next thing in the split is a number, use that as the character
+        // selector to be active for the command
+        if cmd_split.len() > 1 {
+            if let Ok(n) = cmd_split[1].parse::<u8>() {
+                character_selection = n.max(1);
+                if cmd_split.len() > 2 {
+                    params = cmd_split[2..].to_vec();
+                }
+            } else {
+                params = cmd_split[1..].to_vec()
+            }
+        }
+
+        // get the main command to be executed
+        let main_cmd = cmd_split[0];
+
+        match main_cmd {
+            "get" => self.process_slash_command_get(character_selection, params),
+            "set" => self.process_slash_command_set(character_selection, params),
+            _ => {
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Error",
+                    format!("Unrecognized command: '{}'", main_cmd).as_str(),
+                    60,
+                    30,
+                ));
+            }
+        }
+    }
+
+    // process the slash command: "get <char_num>? <var>"
+    // return the result of the variable in a message box
+    fn process_slash_command_get(&mut self, char_selector: u8, params: Vec<&str>) {
+        // sanity checks
+        if params.len() < 1 {
+            self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                "Error",
+                "Variable required. Syntax: 'get <char_num>? <variable>'",
+                60,
+                30,
+            ));
+            return;
+        }
+
+        // pull the character to be used for reference when accessing variables.
+        // char_selector of 1 (or 0) is the active character, and the rest refer to other_participants
+        // the odd ordering is meant to mimic the keybinding of triggering character responses
+        let character = if char_selector < 2 {
+            &self.character
+        } else {
+            let other_index = char_selector as usize - 2;
+            if self.other_participants.len() > other_index {
+                &self.other_participants[other_index].0
+            } else {
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Error",
+                    format!("Cmd 'get'({}): unrecognized character index", char_selector).as_str(),
+                    60,
+                    30,
+                ));
+                return;
+            }
+        };
+
+        let var_name = params[0];
+        match var_name {
+            "emotional_boosts" | "eb" => {
+                let val = character
+                    .emotional_boosts
+                    .clone()
+                    .unwrap_or("<no value>".to_string());
+
+                // we logged the slash command request, so now log the returned value
+                log::debug!("slash command 'get' returned: {}", val);
+
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Information",
+                    format!("'{}'({}): {}", var_name, char_selector, val).as_str(),
+                    60,
+                    30,
+                ));
+            }
+            _ => {
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Error",
+                    format!(
+                        "Cmd 'get'({}): unrecognized variable: {}",
+                        char_selector, var_name
+                    )
+                    .as_str(),
+                    60,
+                    30,
+                ));
+            }
+        }
+    }
+
+    // process the slash command: "set <char_num>? <var> ..."
+    // sets the value for the variable specified to the rest of the input
+    fn process_slash_command_set(&mut self, char_selector: u8, params: Vec<&str>) {
+        // sanity checks
+        if params.len() < 1 {
+            self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                "Error",
+                "Variable required. Syntax: 'set <char_num>? <variable> ...'",
+                60,
+                30,
+            ));
+            return;
+        }
+
+        // pull the character to be used for reference when accessing variables.
+        // char_selector of 0 is the active character, and the rest refer to other_participants
+        let character = if char_selector < 2 {
+            &mut self.character
+        } else {
+            let other_index = char_selector as usize - 2;
+            if self.other_participants.len() > other_index {
+                &mut self.other_participants[other_index].0
+            } else {
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Error",
+                    format!("Cmd 'set'({}): unrecognized character index", char_selector).as_str(),
+                    60,
+                    30,
+                ));
+                return;
+            }
+        };
+
+        let var_name = params[0];
+        match var_name {
+            "emotional_boosts" | "eb" => {
+                let val = if params.len() <= 1 {
+                    None
+                } else {
+                    Some(params[1..].join(" "))
+                };
+                character.emotional_boosts = val;
+            }
+            _ => {
+                self.modal_messagebox = Some(MessageBoxModalWidget::new(
+                    "Error",
+                    format!(
+                        "Cmd 'set'({}): unrecognized variable: {}",
+                        char_selector, var_name
+                    )
+                    .as_str(),
+                    60,
+                    30,
+                ));
+            }
+        }
+    }
 }
 
 impl TerminalRenderable for ChatState {
@@ -849,6 +1027,17 @@ impl TerminalRenderable for ChatState {
                             if !self.save_chatlog_to_last_used() {
                                 log::error!("Failed to save the chatlog to the last used file ({:?}) after editing the user description.", 
                                     self.chatlog.get_last_used_filepath());
+                            }
+                        }
+
+                        ChatEditorState::SlashCommand => {
+                            if !editor.text.is_empty() {
+                                let user_command = editor.text.to_owned();
+                                log::debug!(
+                                    "User requested the following slash command: {}",
+                                    user_command
+                                );
+                                self.process_slash_command(user_command.as_str());
                             }
                         }
                     }

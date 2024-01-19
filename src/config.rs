@@ -31,6 +31,10 @@ pub struct CharacterFileYaml {
     // the starting context of the character, which gets copied to new logs;
     // after that, the chatlog current_context should be used.
     pub context: String,
+
+    // a string that represents the emotional state the character is predisposed to currently.
+    // this gets substituted for <|emotional_boosts|> in the prompt template.
+    pub emotional_boosts: Option<String>,
 }
 impl CharacterFileYaml {
     pub fn load_character(filepath: &PathBuf) -> CharacterFileYaml {

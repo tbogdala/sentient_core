@@ -303,9 +303,9 @@ impl EngineState {
         // order of operations is important here so that the names are replaced last.
         buf = buf.replace("<|character_description|>", &context.character.description);
         buf = buf.replace("<|current_context|>", &context.chatlog.current_context);
-        if let Some(user_desc) = &context.chatlog.user_description {
-            buf = buf.replace("<|user_description|>", user_desc);
-        }
+
+        let user_desc = context.chatlog.user_description.clone().unwrap_or_default();
+        buf = buf.replace("<|user_description|>", user_desc.as_str());
 
         // test to see if this template wants the vector embedding support as well
         // only works with non-empty chat logs.
@@ -343,11 +343,16 @@ impl EngineState {
                 .unwrap_or(DEFAULT_MEMORY_MAX_CONTEXT);
             let memory_max_characters =
                 (memory_max_pct * self.model_config.context_size as f32) * text2token_ratio;
-            log::debug!("memory_max_character: {}", memory_max_characters);
             let mut memories: String = String::new();
 
-            // FIXME: wont work right for continuing prompts
-            if let Some(last_cli) = context.chatlog.last() {
+            let message_start = if context.should_continue {
+                // use the penultimate message for messages getting continued
+                context.chatlog.get(context.chatlog.len() - 2)
+            } else {
+                context.chatlog.last()
+            };
+
+            if let Some(last_cli) = message_start {
                 let last_message = last_cli.get_name_and_items_as_string();
 
                 let mut done_building_memories = false;
@@ -374,6 +379,15 @@ impl EngineState {
             }
 
             buf = buf.replace("<|memory_matches|>", memories.as_str());
+        }
+
+        if buf.contains("<|emotional_boosts|>") {
+            let booster: String = context
+                .character
+                .emotional_boosts
+                .clone()
+                .unwrap_or_default();
+            buf = buf.replace("<|emotional_boosts|>", &booster.as_str());
         }
 
         buf = buf.replace("<|character_name|>", &context.character.name);
