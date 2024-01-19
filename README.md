@@ -374,6 +374,8 @@ The following templates are supported in prompt templates on the models in the `
 * `<|user_description|>`: If the `user_description` field from the chatlog is set, that value be used.
 * `<|current_context|>`: The `current_context` field from the chatlog, which is populated initially with the `context` from the character file.
 * `<|similar_sentences|>`: The sentence similary results from running vector embedding searches through the log. Only include this if the `sentence_similarity` feature is enabled or else no substitution will happen.
+* `<|memory_matches|>`: Replaced with any 'values' from memories where the 'key' is found in the last message. Multiple memories can stack even if they have the same 'key'.
+* `<|emotional_boosts|>`: Replaced with the `emotional_boosts` value from the character configuration file if present; can be updated with the Command Interface.
 * `<|character_name|>`: The name of the current character to generate a response for.
 * `<|user_name|>`: The name of the user, pulled from the `display_name` field in the `config.yaml` file.
 
