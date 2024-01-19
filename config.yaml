@@ -125,6 +125,7 @@ models:
     remote_path: "http://localhost:5001" # note that there's no / at the end
     context_size: 2048
     #similar_sentence_count: 3
+    #prompt_chatlog_split_with_newlines: false  # setting to true breaks up <|chat_history|> with more newlines
     prompt_instruct_template: |- 
       Continue the chat dialogue below. Write a single reply for the character named "<|character_name|>".
       <|character_description|>

@@ -142,6 +142,12 @@ pub struct ConfiguredLlm {
     // with several tags that get replaced with content at
     // inference time.
     pub prompt_instruct_template: String,
+
+    // if false, each chatlogitem line is added to the prompt all in one line, without
+    // additional spaces and the owner entity's name is prepended to the first line.
+    // if true, the owner entity's name gets its own line and then there's an additional
+    // space between chatlogitems.
+    pub prompt_chatlog_split_with_newlines: Option<bool>,
 }
 
 #[derive(Deserialize, PartialEq, Debug, Default, Clone)]
@@ -265,6 +271,7 @@ pub struct ConfigurationFile {
     // the list of configured models
     pub models: Vec<ConfiguredLlm>,
 
+    // the optional configuration of an embedding model to use for the sentence similarity feature
     pub embedding_model: Option<ConfiguredEmbeddingModel>,
 }
 

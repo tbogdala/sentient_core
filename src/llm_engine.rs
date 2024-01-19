@@ -118,7 +118,7 @@ impl LlmEngine {
                 config,
 
                 #[cfg(feature = "sentence_similarity")]
-                embedding_engine: embedding_engine,
+                embedding_engine,
 
                 rng: rand::thread_rng(),
             };
@@ -410,11 +410,10 @@ impl EngineState {
             * text2token_ratio) as usize
             - buf.len();
         for conv_turn in context.chatlog.iter().rev() {
-            let turn_str = conv_turn.get_name_and_items_as_string();
-
             // if we're continuing a response and haven't pulled the log item to continue
             // do that here - should trigger on the first iteration.
             if context.should_continue && continue_line.is_empty() {
+                let turn_str = conv_turn.get_name_and_items_as_string();
                 // remove the name from the last log line if it's there ... in multiline responses it may not be.
                 if turn_str.starts_with(&context.character.name) {
                     continue_line = turn_str[context.character.name.len() + 1..].to_owned();
@@ -422,6 +421,21 @@ impl EngineState {
                     continue_line = turn_str.to_owned();
                 }
             } else {
+                let turn_str = if self
+                    .model_config
+                    .prompt_chatlog_split_with_newlines
+                    .unwrap_or_default()
+                {
+                    // if this setting is enabled, entity name gets its own newline
+                    // and an extra newline at the end to create space between each turn.
+                    format!(
+                        "{}:\n{}\n",
+                        conv_turn.entity,
+                        conv_turn.get_items_as_string()
+                    )
+                } else {
+                    conv_turn.get_name_and_items_as_string()
+                };
                 let new_history = format!("{}\n{}", turn_str, history_log);
                 if new_history.len() + continue_line.len() >= prompt_limit {
                     break;
