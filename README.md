@@ -69,7 +69,7 @@ The project is in its early stages, so some basic features may still be missing.
 ## Requirements
 
 * Windows users must install [CUDA](https://developer.nvidia.com/cuda-downloads) from Nvidia. Version 11.8 has been tested to work.
-* Linux binaries were built wit CUDA 11.
+* Linux binaries were built with CUDA 11.
 * Mac uses metal so no further libraries are needed.
 
 It's suggested that you have at least 8GB of VRAM in your graphics cards so that you can run a 7B parameter

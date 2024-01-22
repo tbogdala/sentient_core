@@ -90,6 +90,7 @@ impl ChatState {
                 top_p: params.top_p,
                 min_p: params.min_p,
                 temperature: params.temperature,
+                frequency_penalty: params.frequency_penalty,
                 repeat_penalty: params.repeat_penalty,
                 repeat_penalty_range: params.repeat_penalty_range,
                 mirostat: params.mirostat,
@@ -565,18 +566,11 @@ impl ChatState {
 
     fn render_editing_parameters_modal(&self, frame: &mut Frame) {
         let mut area = centered_rect(60, 30, frame.size());
-        area.height = std::cmp::min(area.height, 8);
+        area.height = std::cmp::min(area.height, 9);
 
         let mut hyperparameter_strings =
             vec![Line::from(format!("\"{}\"", self.current_parameters.name))
                 .alignment(Alignment::Center)];
-
-        if let Some(repeat_penalty) = self.current_parameters.repeat_penalty {
-            hyperparameter_strings.push(Line::from(format!("repeat penalty: {}", repeat_penalty)));
-        }
-        if let Some(repeat_range) = self.current_parameters.repeat_penalty_range {
-            hyperparameter_strings.push(Line::from(format!("repeat range: {}", repeat_range)));
-        }
 
         if let Some(mirostat) = self.current_parameters.mirostat {
             if mirostat == 1 || mirostat == 2 {
@@ -602,6 +596,16 @@ impl ChatState {
                 hyperparameter_strings.push(Line::from(format!("temperature: {}", temp)));
             }
         };
+
+        if let Some(repeat_penalty) = self.current_parameters.repeat_penalty {
+            hyperparameter_strings.push(Line::from(format!("repeat penalty: {}", repeat_penalty)));
+        }
+        if let Some(repeat_range) = self.current_parameters.repeat_penalty_range {
+            hyperparameter_strings.push(Line::from(format!("repeat range: {}", repeat_range)));
+        }
+        if let Some(frequency_penalty) = self.current_parameters.frequency_penalty {
+            hyperparameter_strings.push(Line::from(format!("frequency penalty: {}", frequency_penalty)));
+        }
 
         let textarea = Paragraph::new(hyperparameter_strings)
             .style(Style::default().fg(Color::Cyan))

@@ -623,6 +623,9 @@ impl EngineState {
                 predict_options.temperature = temp;
             }
         }
+        if let Some(freq_pen) = context.parameters.frequency_penalty {
+            predict_options.frequency_penalty = freq_pen;
+        }
         if let Some(rep_pen) = context.parameters.repeat_penalty {
             predict_options.penalty = rep_pen;
         }

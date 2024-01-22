@@ -197,6 +197,7 @@ pub struct ConfiguredParameters {
     pub top_k: Option<usize>,
     pub top_p: Option<f32>,
     pub min_p: Option<f32>,
+    pub frequency_penalty: Option<f32>,
     pub repeat_penalty: Option<f32>,
     pub repeat_penalty_range: Option<usize>,
     pub temperature: Option<f32>,
