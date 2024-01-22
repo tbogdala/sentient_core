@@ -228,29 +228,19 @@ An example of a memory file would look like this:
 }
 ```
 
-#### Usage
-
 Using this example Memory File, if the user replies to the character and mentions 'SentientCore' (case-sensitive) anywhere 
 in the reply, the value text will get added to the `<|memory_matches|>` template parameter.
 
-In order to have the Memory File actually loaded and searched, **it needs to be manually included in the chat log**.
-In the `log.json` file for the chatlog, add the following field to the root object of the chatlog (parallel to other 
-fields like `current_context` and `items`):
-
-```json
-  # ...<snip>...
-  "memory_files": [
-    "memories.json"
-  ],
-  # ...<snip>...
-```
-
-Multiple memory files are supported. Multiple entries for the same `key` are supported and all will get potentially included.
+Multiple memory files are supported. By default, new chatlogs are created with a single `memories.json` file
+that has a sample `key` and `value` pair. In order to support multiple memory files, open up the `log.json` file
+for the chatlog and add to the `memory_files` field. In addition to multiple memory files,
+multiple entries for the same `key` are supported and all will get potentially included.
 
 In order to prevent the memories from taking over all the space available in the context, there's a built in limit of 10% of
 the context. If a memory isn't estimated to fit in that amount of tokens, it won't be included and further memory processing 
 is halted. The size of this limit can be configured in the main `config.yaml` file using the `memory_max_context_percentage`
 field, which defaults to `0.1` for 10%. Setting it to `0.05` would limit it to 5% instead, for example.
+
 
 ### Emotional Boosts
 

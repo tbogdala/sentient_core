@@ -18,7 +18,7 @@ use crate::{
     tui::{
         Frame, MessageBoxModalWidget, ProcessInputResult, StatefulList, TerminalEvent,
         TerminalRenderable, TextEditingBlockModalWidget,
-    },
+    }, memories::{MemoryFile, Memory},
 };
 
 enum LogSelectEditorState {
@@ -104,7 +104,7 @@ impl TerminalRenderable for LogSelectState {
                             } else {
                                 let made_dir = DirBuilder::new()
                                     .recursive(true)
-                                    .create(new_log_folder_path)
+                                    .create(&new_log_folder_path)
                                     .context(
                                         "Attempting to create the directory for the new chatlog",
                                     );
@@ -113,6 +113,22 @@ impl TerminalRenderable for LogSelectState {
                                         &self.character,
                                         &self.config.display_name,
                                     );
+
+                                    // generate a new log with a blank memory file automatically
+                                    let memory_filename = "memories.json".to_string();
+                                    new_log.memory_files = Some(vec![memory_filename.clone()]);
+                                    let mut memory_data = MemoryFile::default();
+                                    memory_data.memories.push(Memory{
+                                        key: "This is a sample memory key - replace with the phrase to search for".into(),
+                                        value: "This is a sample memory text that will get included in the <|memory_matches|> template when 'key' is found.".into()
+                                    });
+                                    let default_memory_file = new_log_folder_path.join(memory_filename);
+                                    memory_data.save_to_file(&default_memory_file)
+                                        .context("Attempting to create a default memory file for the character")
+                                        .unwrap();
+
+
+
                                     if let Err(err) = new_log.save_to_json_file(&new_log_file_path)
                                     {
                                         log::error!(
@@ -368,10 +384,24 @@ impl LogSelectState {
                 .recursive(true)
                 .create(&default_log_dir)
                 .unwrap();
+            
+            // generate a new log with a blank memory file automatically
+            let memory_filename = "memories.json".to_string();
             let mut new_chatlog = ChatLog::new_with_greeting(&character, &config.display_name);
+            new_chatlog.memory_files = Some(vec![memory_filename.clone()]);
             new_chatlog
                 .save_to_json_file(&default_log_file)
                 .context("Attempting to create a default chatlog for the character")
+                .unwrap();
+
+            let mut memory_data = MemoryFile::default();
+            memory_data.memories.push(Memory{
+                key: "This is a sample memory key - replace with the phrase to search for".into(),
+                value: "This is a sample memory text that will get included in the <|memory_matches|> template when 'key' is found.".into()
+            });
+            let default_memory_file = default_log_dir.join(memory_filename);
+            memory_data.save_to_file(&default_memory_file)
+                .context("Attempting to create a default memory file for the character")
                 .unwrap();
         }
 
