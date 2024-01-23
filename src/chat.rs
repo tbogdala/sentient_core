@@ -6,6 +6,7 @@ use ratatui::prelude::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Chart, Clear, Dataset, Paragraph, Sparkline};
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -402,10 +403,20 @@ impl ChatState {
             } else if key.code == KeyCode::Char('p') {
                 self.editing_parameters = true;
             } else if key.code == KeyCode::Char('j') || key.code == KeyCode::Down {
-                self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
+                if self.config.display_chatlog_downward.unwrap_or_default() {
+                    if self.chatlog_scroll > 0 {
+                        self.chatlog_scroll -= 1;
+                    }
+                } else {
+                    self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
+                }
             } else if key.code == KeyCode::Char('k') || key.code == KeyCode::Up {
-                if self.chatlog_scroll > 0 {
-                    self.chatlog_scroll -= 1;
+                if self.config.display_chatlog_downward.unwrap_or_default() {
+                    self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
+                } else {
+                    if self.chatlog_scroll > 0 {
+                        self.chatlog_scroll -= 1;
+                    }
                 }
             } else if key.code == KeyCode::Char('x') {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -621,7 +632,7 @@ impl ChatState {
 
     fn render_chatlog(&self, frame: &mut Frame, area: Rect) {
         // loop through the chat history and build up each line we want to render
-        let mut chat_history = vec![];
+        let mut chat_history: VecDeque<Line<'_>> = VecDeque::new();
         let lines_needed: usize = area.height as usize;
 
         for chatlogitem in self.chatlog.iter().rev().skip(self.chatlog_scroll) {
@@ -687,6 +698,7 @@ impl ChatState {
 
             // each log item may have multiple lines
             let item_lines = &chatlogitem.lines;
+            let mut cli_lines_buffer: VecDeque<Line<'_>> = VecDeque::new();
             for (il_index, item_line) in item_lines.iter().enumerate() {
                 // each line in the log item may be too long, so we break it apart
                 let split_item_lines =
@@ -731,18 +743,42 @@ impl ChatState {
                         }
                     }
 
-                    chat_history.push(Line::from(spans));
+                    cli_lines_buffer.push_back(Line::from(spans));
                 }
             }
 
-            if chat_history.len() >= lines_needed {
+            // add the chatlogitem lines into the chat history collection
+            let mut maxed_out_lines = false;
+            if self.config.display_chatlog_downward.unwrap_or_default() {
+                for cli_line in cli_lines_buffer.into_iter().rev() {
+                    if chat_history.len() >= lines_needed {
+                        maxed_out_lines = true;
+                        break;
+                    }
+                    chat_history.push_front(cli_line);
+                }
+            } else {
+                for cli_line in cli_lines_buffer.into_iter() {
+                    if chat_history.len() >= lines_needed {
+                        maxed_out_lines = true;
+                        break;
+                    }
+                    chat_history.push_back(cli_line);
+                }
+            }
+
+            if maxed_out_lines {
                 break;
             }
 
             // potentially add a buffer line if configured to do so
             if let Some(add_divider) = self.config.add_visual_buffer_between_chatlog_items {
-                if add_divider {
-                    chat_history.push(Line::from(" "));
+                if add_divider && chat_history.len() < lines_needed {
+                    if self.config.display_chatlog_downward.unwrap_or_default() {
+                        chat_history.push_front(Line::from(" "));
+                    } else {
+                        chat_history.push_back(Line::from(" "));
+                    }
                 }
             }
         }
@@ -753,7 +789,7 @@ impl ChatState {
         } else {
             Alignment::Right
         };
-        let chatlog = Paragraph::new(chat_history).alignment(alignment);
+        let chatlog = Paragraph::new(Vec::from(chat_history)).alignment(alignment);
         frame.render_widget(chatlog, area);
     }
 

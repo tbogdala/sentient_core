@@ -240,6 +240,9 @@ pub struct ConfigurationFile {
     // if true, this will trim the text inferrence to just before the first usage of " {display_name}:"
     pub stop_on_display_name: bool,
 
+    // if true, this will have the chatlog flow from top to bottom instead of the default bottom to top
+    pub display_chatlog_downward: Option<bool>,
+
     // specifies the percentage (0.0-1.0) of the context the memories are allowed to fillup.
     // E.g. setting this to 0.1 will allow up to approximately 10% of the context_size for a configured model.
     pub memory_max_context_percentage: Option<f32>,
@@ -296,6 +299,7 @@ impl Default for ConfigurationFile {
             batch_size: Some(512),
             add_visual_buffer_between_chatlog_items: None,
             stop_on_display_name: true,
+            display_chatlog_downward: None,
             parameters: Vec::new(),
             models: Vec::new(),
             embedding_model: None,

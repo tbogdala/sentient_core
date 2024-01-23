@@ -17,6 +17,10 @@ add_visual_buffer_between_chatlog_items: true
 # Works for the user, the main character and any of the other participant characters.
 stop_on_display_name: true 
 
+# Displays the chatlog flowing top to bottom which may be more natural than the default
+# behavior of bottom to top.
+display_chatlog_downward: true
+
 # Change the progress bar colors. The primary RGB for the progress bar will be
 # overridden by the RGB color of the character's name currently causing the progress bar to show up.
 #progress_primary_rgb: [220, 240, 7]
