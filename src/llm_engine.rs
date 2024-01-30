@@ -38,6 +38,7 @@ pub enum LlmEngineRequest {
 #[derive(Clone, PartialEq)]
 pub enum LlmEngineResponse {
     NewText(Option<String>, TextInferenceContext),
+    NewTextFragment(String),
     ModelLoaded,
 }
 
@@ -218,9 +219,26 @@ impl LlmEngine {
                             }
                         }
 
+                        // if it hasn't been disabled, setup the callback to get tokens as they come in
+                        let token_update_chan = send_to_client.clone();
+                        let token_callback: Option<Box<dyn Fn(String) -> bool + Send + 'static>> =
+                            Some(Box::new(move |token| {
+                                let new_frag = LlmEngineResponse::NewTextFragment(token);
+                                if let Err(err) = token_update_chan.send(new_frag) {
+                                    log::error!(
+                                        "LlmEngine thread's NewTextFragment send failed: {}",
+                                        err
+                                    );
+                                }
+
+                                // TODO: for now we always continue but at some point this behavior
+                                // could also be tweaked to stop early.
+                                true
+                            }));
+
                         // if we have a local llm model loaded use that, otherwise try remote API config
                         let new_text = if !engine_state.model_config.path.is_none() {
-                            engine_state.text_infer(&mut new_context)
+                            engine_state.text_infer(&mut new_context, token_callback)
                         } else {
                             engine_state.text_infer_kobold(&mut new_context)
                         };
@@ -565,7 +583,11 @@ impl EngineState {
         Some(inferred_string)
     }
 
-    fn text_infer(&mut self, context: &mut TextInferenceContext) -> Option<String> {
+    fn text_infer(
+        &mut self,
+        context: &mut TextInferenceContext,
+        token_callback: Option<Box<dyn Fn(String) -> bool + Send + 'static>>,
+    ) -> Option<String> {
         let this_seed = match self.model_config.seed {
             Some(s) => s,
             None => -1, // this should make llama.cpp make a random seed
@@ -579,6 +601,7 @@ impl EngineState {
                 .config
                 .maximum_new_tokens
                 .unwrap_or(DEFAULT_MAX_NEW_TOKENS) as i32,
+            token_callback,
             ..Default::default()
         };
 

@@ -63,6 +63,10 @@ pub struct ChatState {
     // for. If set to None, that mean's it's the user.
     waiting_for_character: Option<CharacterFileYaml>,
 
+    // The optional string representing the incoming text prediction for the
+    // character specified by `waiting_for_character`.
+    in_flight_text: Option<String>,
+
     progress_widget: Option<ProgressBarScopeSignal>,
 
     // contains a modal dialog widget used to show a message or alert to the user
@@ -119,6 +123,7 @@ impl ChatState {
             reply_text: String::new(),
             waiting_for_operation: false,
             waiting_for_character: None,
+            in_flight_text: None,
             progress_widget: None,
             modal_messagebox: None,
             editor_widget: None,
@@ -143,14 +148,13 @@ impl ChatState {
 
     fn process_incoming_llm_engine_messages(&mut self) {
         // see if there are any incoming messages from the server
-        if self.recv_on_client.is_empty() == false {
+        while self.recv_on_client.is_empty() == false {
             match self.recv_on_client.try_recv() {
                 Ok(llm_engine::LlmEngineResponse::NewText(maybe_resp, context)) => {
                     if let Some(resp) = maybe_resp {
                         //TODO: consider a different way of getting vector embeddings back from the thread
                         self.chatlog = context.chatlog;
 
-                        // FIXME: this is going to be broken for other_participants
                         if context.should_continue == false {
                             let new_item = ChatLogItem::new_from_str(
                                 context.character.name.to_owned(),
@@ -166,11 +170,24 @@ impl ChatState {
 
                         // save the log file out
                         let _ = self.save_chatlog_to_last_used();
+
+                        // clean up user interface bits now that the prediction is finished
                         self.hide_progress_bar();
+                        self.in_flight_text = None;
                     } else {
                         log::error!("Response for the text inferrence was empty.");
                     }
                 }
+
+                Ok(llm_engine::LlmEngineResponse::NewTextFragment(token)) => {
+                    if self.in_flight_text == None {
+                        self.in_flight_text = Some(String::new());
+                    }
+                    if let Some(in_flight) = self.in_flight_text.as_mut() {
+                        in_flight.push_str(token.as_str());
+                    }
+                }
+
                 _ => {}
             }
         }
@@ -408,11 +425,13 @@ impl ChatState {
                         self.chatlog_scroll -= 1;
                     }
                 } else {
-                    self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
+                    self.chatlog_scroll =
+                        std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
                 }
             } else if key.code == KeyCode::Char('k') || key.code == KeyCode::Up {
                 if self.config.display_chatlog_downward.unwrap_or_default() {
-                    self.chatlog_scroll = std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
+                    self.chatlog_scroll =
+                        std::cmp::min(self.chatlog_scroll + 1, self.chatlog.len());
                 } else {
                     if self.chatlog_scroll > 0 {
                         self.chatlog_scroll -= 1;
@@ -615,7 +634,10 @@ impl ChatState {
             hyperparameter_strings.push(Line::from(format!("repeat range: {}", repeat_range)));
         }
         if let Some(frequency_penalty) = self.current_parameters.frequency_penalty {
-            hyperparameter_strings.push(Line::from(format!("frequency penalty: {}", frequency_penalty)));
+            hyperparameter_strings.push(Line::from(format!(
+                "frequency penalty: {}",
+                frequency_penalty
+            )));
         }
 
         let textarea = Paragraph::new(hyperparameter_strings)
@@ -630,122 +652,129 @@ impl ChatState {
         frame.render_widget(textarea, area);
     }
 
+    // render a single ChatLogItem to a VecDeque of ratatui Lines.
+    fn render_chatlog_item(&self, area: Rect, chatlogitem: &ChatLogItem) -> VecDeque<Line<'_>> {
+        // the bool keeps track of whether or not we're in a quote and
+        // the chunker string is a buffer used so that we don't create
+        // hundreds of strings in the loop.
+        let mut in_quotes_state = false;
+        let mut quote_chunker = String::new();
+
+        // setup the styles depending on who's talking
+        let mut text_style = Style::default();
+        let mut quotes_style = Style::default();
+        let mut name_style = Style::default();
+        // check to see if this is from a character
+        if chatlogitem
+            .entity
+            .eq_ignore_ascii_case(self.character.name.as_str())
+        {
+            if let Some(rgbs) = &self.character.name_rgb {
+                name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+            if let Some(rgbs) = &self.character.text_rgb {
+                text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+            if let Some(rgbs) = &self.character.quotes_rgb {
+                quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+        }
+        // or if this is from the user
+        else if chatlogitem
+            .entity
+            .eq_ignore_ascii_case(&self.config.display_name.as_str())
+        {
+            if let Some(rgbs) = &self.config.display_name_rgb {
+                name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+            if let Some(rgbs) = &self.config.text_rgb {
+                text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+            if let Some(rgbs) = &self.config.quotes_rgb {
+                quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+            }
+        }
+
+        // check to see if other participants are loaded and if they have color syntax rules
+        for other in &self.other_participants {
+            if other
+                .0
+                .name
+                .eq_ignore_ascii_case(chatlogitem.entity.as_str())
+            {
+                if let Some(rgbs) = &other.0.name_rgb {
+                    name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+                }
+                if let Some(rgbs) = &other.0.text_rgb {
+                    text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+                }
+                if let Some(rgbs) = &other.0.quotes_rgb {
+                    quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
+                }
+            }
+        }
+
+        // each log item may have multiple lines
+        let item_lines = &chatlogitem.lines;
+        let mut cli_lines_buffer: VecDeque<Line<'_>> = VecDeque::new();
+        for (il_index, item_line) in item_lines.iter().enumerate() {
+            // each line in the log item may be too long, so we break it apart
+            let split_item_lines =
+                slice_up_string(item_line, area.width as usize, chatlogitem.entity.len() + 2); // 2 == ": "
+            for (si_index, split_item_line) in split_item_lines.iter().enumerate() {
+                let mut spans = Vec::new();
+                if il_index == 0 && si_index == 0 {
+                    // for the first line of the chat log item we see if we have
+                    // a known talker name, and color it differently
+                    spans.push(Span::styled(
+                        chatlogitem.entity.to_owned(),
+                        name_style.bold(),
+                    ));
+                    spans.push(Span::styled(": ", text_style.bold()));
+                }
+
+                // Loop through the split line by graphemes and manually chunk things
+                // up into quoted text and unquoted text.
+                quote_chunker.clear();
+                for g in UnicodeSegmentation::graphemes(split_item_line.as_str(), true) {
+                    if g == "\"" {
+                        if in_quotes_state {
+                            quote_chunker.push_str(g);
+                            spans.push(Span::styled(quote_chunker.to_owned(), quotes_style));
+                            quote_chunker.clear();
+                        } else {
+                            spans.push(Span::styled(quote_chunker.to_owned(), text_style));
+                            quote_chunker.clear();
+                            quote_chunker.push_str(g);
+                        }
+                        in_quotes_state = !in_quotes_state;
+                    } else {
+                        quote_chunker.push_str(g);
+                    }
+                }
+                // handle any left behind grapheme chunks
+                if quote_chunker.is_empty() == false {
+                    if in_quotes_state {
+                        spans.push(Span::styled(quote_chunker.to_owned(), quotes_style));
+                    } else {
+                        spans.push(Span::styled(quote_chunker.to_owned(), text_style));
+                    }
+                }
+
+                cli_lines_buffer.push_back(Line::from(spans));
+            }
+        }
+
+        cli_lines_buffer
+    }
+
     fn render_chatlog(&self, frame: &mut Frame, area: Rect) {
         // loop through the chat history and build up each line we want to render
         let mut chat_history: VecDeque<Line<'_>> = VecDeque::new();
         let lines_needed: usize = area.height as usize;
 
         for chatlogitem in self.chatlog.iter().rev().skip(self.chatlog_scroll) {
-            // the bool keeps track of whether or not we're in a quote and
-            // the chunker string is a buffer used so that we don't create
-            // hundreds of strings in the loop.
-            let mut in_quotes_state = false;
-            let mut quote_chunker = String::new();
-
-            // setup the styles depending on who's talking
-            let mut text_style = Style::default();
-            let mut quotes_style = Style::default();
-            let mut name_style = Style::default();
-            // check to see if this is from a character
-            if chatlogitem
-                .entity
-                .eq_ignore_ascii_case(self.character.name.as_str())
-            {
-                if let Some(rgbs) = &self.character.name_rgb {
-                    name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-                if let Some(rgbs) = &self.character.text_rgb {
-                    text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-                if let Some(rgbs) = &self.character.quotes_rgb {
-                    quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-            }
-            // or if this is from the user
-            else if chatlogitem
-                .entity
-                .eq_ignore_ascii_case(&self.config.display_name.as_str())
-            {
-                if let Some(rgbs) = &self.config.display_name_rgb {
-                    name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-                if let Some(rgbs) = &self.config.text_rgb {
-                    text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-                if let Some(rgbs) = &self.config.quotes_rgb {
-                    quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                }
-            }
-
-            // check to see if other participants are loaded and if they have color syntax rules
-            for other in &self.other_participants {
-                if other
-                    .0
-                    .name
-                    .eq_ignore_ascii_case(chatlogitem.entity.as_str())
-                {
-                    if let Some(rgbs) = &other.0.name_rgb {
-                        name_style = name_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                    }
-                    if let Some(rgbs) = &other.0.text_rgb {
-                        text_style = text_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                    }
-                    if let Some(rgbs) = &other.0.quotes_rgb {
-                        quotes_style = quotes_style.fg(Color::Rgb(rgbs[0], rgbs[1], rgbs[2]));
-                    }
-                }
-            }
-
-            // each log item may have multiple lines
-            let item_lines = &chatlogitem.lines;
-            let mut cli_lines_buffer: VecDeque<Line<'_>> = VecDeque::new();
-            for (il_index, item_line) in item_lines.iter().enumerate() {
-                // each line in the log item may be too long, so we break it apart
-                let split_item_lines =
-                    slice_up_string(item_line, area.width as usize, chatlogitem.entity.len() + 2); // 2 == ": "
-                for (si_index, split_item_line) in split_item_lines.iter().enumerate() {
-                    let mut spans = Vec::new();
-                    if il_index == 0 && si_index == 0 {
-                        // for the first line of the chat log item we see if we have
-                        // a known talker name, and color it differently
-                        spans.push(Span::styled(
-                            chatlogitem.entity.to_owned(),
-                            name_style.bold(),
-                        ));
-                        spans.push(Span::styled(": ", text_style.bold()));
-                    }
-
-                    // Loop through the split line by graphemes and manually chunk things
-                    // up into quoted text and unquoted text.
-                    quote_chunker.clear();
-                    for g in UnicodeSegmentation::graphemes(split_item_line.as_str(), true) {
-                        if g == "\"" {
-                            if in_quotes_state {
-                                quote_chunker.push_str(g);
-                                spans.push(Span::styled(quote_chunker.to_owned(), quotes_style));
-                                quote_chunker.clear();
-                            } else {
-                                spans.push(Span::styled(quote_chunker.to_owned(), text_style));
-                                quote_chunker.clear();
-                                quote_chunker.push_str(g);
-                            }
-                            in_quotes_state = !in_quotes_state;
-                        } else {
-                            quote_chunker.push_str(g);
-                        }
-                    }
-                    // handle any left behind grapheme chunks
-                    if quote_chunker.is_empty() == false {
-                        if in_quotes_state {
-                            spans.push(Span::styled(quote_chunker.to_owned(), quotes_style));
-                        } else {
-                            spans.push(Span::styled(quote_chunker.to_owned(), text_style));
-                        }
-                    }
-
-                    cli_lines_buffer.push_back(Line::from(spans));
-                }
-            }
+            let cli_lines_buffer = self.render_chatlog_item(area, chatlogitem);
 
             // add the chatlogitem lines into the chat history collection
             let mut maxed_out_lines = false;
@@ -780,7 +809,7 @@ impl ChatState {
                         chat_history.push_back(Line::from(" "));
                     }
                 }
-            }
+            }    
         }
 
         // use the configured text alignment here.
@@ -1144,11 +1173,86 @@ impl TerminalRenderable for ChatState {
             editing_reply_lines.len() as u16
         };
 
-        // do the layout for the main column
-        let vchunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Max(editing_vertical_size), Constraint::Min(4)].as_ref())
-            .split(hchunks[1]);
+        // do a rendering of the text that's currently in progress of being predicted
+        let mut in_flight_lines: VecDeque<Line<'_>> = VecDeque::new();
+        {
+            if let Some(in_flight_text) = self.in_flight_text.as_ref() {
+                // the temporary chatlogitem is created so that there's consistent rendering
+                let in_flight_chatlogitem = ChatLogItem {
+                    entity: self.waiting_for_character.as_ref().unwrap().name.clone(),
+                    lines: in_flight_text.trim_start().lines().map(|l| l.to_string()).collect(),
+                    ..Default::default()
+                };
+                in_flight_lines = self.render_chatlog_item(hchunks[1], &in_flight_chatlogitem);
+            }
+        }
+        let in_flight_size = if in_flight_lines.is_empty()
+            || self.config.disable_response_streaming.unwrap_or_default()
+        {
+            0
+        } else {
+            in_flight_lines.len() as u16 + 1
+        };
+
+        // do the layout for the main column. doing things like this allow for
+        // different layouts depending on the chatlog flow direction.
+        let (vchunks, progress_idx, in_flight_idx, chatlog_idx) =
+            if self.config.display_chatlog_downward.unwrap_or_default() {
+                let chatlog_buffer = if in_flight_lines.is_empty()
+                    || self.progress_widget.is_some()
+                    || self.editing_reply
+                {
+                    1
+                } else {
+                    0
+                };
+
+                (
+                    Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints(
+                            [
+                                Constraint::Min(4),
+                                Constraint::Max(chatlog_buffer),
+                                Constraint::Max(in_flight_size),
+                                Constraint::Max(editing_vertical_size),
+                            ]
+                            .as_ref(),
+                        )
+                        .split(hchunks[1]),
+                    3,
+                    2,
+                    0,
+                )
+            } else {
+                (
+                    Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints(
+                            [
+                                Constraint::Max(editing_vertical_size),
+                                Constraint::Max(in_flight_size),
+                                Constraint::Min(4),
+                            ]
+                            .as_ref(),
+                        )
+                        .split(hchunks[1]),
+                    0,
+                    1,
+                    2,
+                )
+            };
+
+        // render the in flight text currently being predicted
+        if !in_flight_lines.is_empty() {
+            let alignment = if let Some(justification) = &self.config.chat_text_justification {
+                justification.clone().into()
+            } else {
+                Alignment::Right
+            };
+            let in_flight_p = Paragraph::new(Vec::from(in_flight_lines)).alignment(alignment);
+            frame.render_widget(in_flight_p, vchunks[in_flight_idx]);
+        }
 
         // render either the reply editing or a progress bar
         if self.editing_reply {
@@ -1158,13 +1262,13 @@ impl TerminalRenderable for ChatState {
                 Alignment::Right
             };
             let editing_reply_p = Paragraph::new(editing_reply_lines).alignment(alignment);
-            frame.render_widget(editing_reply_p, vchunks[0]);
+            frame.render_widget(editing_reply_p, vchunks[progress_idx]);
         } else if self.waiting_for_operation {
-            self.render_progress_bar(frame, vchunks[0]);
+            self.render_progress_bar(frame, vchunks[progress_idx]);
         }
 
         // render the visible portions of the chatlog
-        self.render_chatlog(frame, vchunks[1]);
+        self.render_chatlog(frame, vchunks[chatlog_idx]);
 
         // Now render any modal boxes over the chat log, only selecting one of them to draw.
         // This *should* mimic the same order that input processing gets called so that

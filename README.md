@@ -13,7 +13,7 @@ The project is in its early stages, so some basic features may still be missing.
 - [x] GGUF Llama models or any model that [Llama.cpp](https://github.com/ggerganov/llama.cpp) supports.
 - [x] GPU layer offloading for accelleration of local text generation
 - [x] Optionally use koboldcpp as a backend for text generation
-- [ ] Streaming-mode for text inference
+- [x] Streaming-mode for text inference
 
 
 ### Chatting

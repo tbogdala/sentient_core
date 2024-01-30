@@ -21,6 +21,10 @@ stop_on_display_name: true
 # behavior of bottom to top.
 display_chatlog_downward: true
 
+# By default, when not using a remote API like Kobold, the text prediction in
+# progress will be rendered for the user. Using this option, you can disable that.
+#disable_response_streaming: true
+
 # Change the progress bar colors. The primary RGB for the progress bar will be
 # overridden by the RGB color of the character's name currently causing the progress bar to show up.
 #progress_primary_rgb: [220, 240, 7]

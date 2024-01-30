@@ -243,6 +243,9 @@ pub struct ConfigurationFile {
     // if true, this will have the chatlog flow from top to bottom instead of the default bottom to top
     pub display_chatlog_downward: Option<bool>,
 
+    // if true, this will not use the callback during text generation to update the UI in realtime
+    pub disable_response_streaming: Option<bool>,
+
     // specifies the percentage (0.0-1.0) of the context the memories are allowed to fillup.
     // E.g. setting this to 0.1 will allow up to approximately 10% of the context_size for a configured model.
     pub memory_max_context_percentage: Option<f32>,
@@ -300,6 +303,7 @@ impl Default for ConfigurationFile {
             add_visual_buffer_between_chatlog_items: None,
             stop_on_display_name: true,
             display_chatlog_downward: None,
+            disable_response_streaming: None,
             parameters: Vec::new(),
             models: Vec::new(),
             embedding_model: None,
