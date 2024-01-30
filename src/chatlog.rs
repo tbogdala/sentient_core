@@ -188,6 +188,7 @@ impl ChatLog {
     //   * Each log line should start with a name, followed by a colon, indicating the name of the speaker/actor
     //   * For multiline responses, every line that doesn't start with a name colon gets
     //     attached to the line above it.
+    #[allow(dead_code)]
     pub fn new_from_text_file(fp: &PathBuf, names: Vec<String>) -> Result<ChatLog> {
         let f = File::open(&fp).context("Failed to open the file.")?;
         let reader = BufReader::new(f);
