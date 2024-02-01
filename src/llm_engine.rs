@@ -1,4 +1,4 @@
-use std::thread;
+use std::{sync::Arc, thread};
 
 // these to uses are for logging debug files out for the prompt and the text inferrence result.
 #[cfg(debug_assertions)]
@@ -49,8 +49,8 @@ pub struct LlmEngine {
 }
 impl LlmEngine {
     pub fn spawn(config: ConfigurationFile, model_fileorname: String) -> LlmEngine {
-        let (send_to_server, recv_on_server) = bounded::<LlmEngineRequest>(10);
-        let (send_to_client, recv_on_client) = bounded::<LlmEngineResponse>(10);
+        let (send_to_server, recv_on_server) = bounded::<LlmEngineRequest>(100);
+        let (send_to_client, recv_on_client) = bounded::<LlmEngineResponse>(100);
         let thread_handle = thread::spawn(move || {
             // failures should have been detected before this gets here
             let model_config = config
@@ -221,8 +221,8 @@ impl LlmEngine {
 
                         // if it hasn't been disabled, setup the callback to get tokens as they come in
                         let token_update_chan = send_to_client.clone();
-                        let token_callback: Option<Box<dyn Fn(String) -> bool + Send + 'static>> =
-                            Some(Box::new(move |token| {
+                        let token_callback: Option<llama_cpp_rs::options::TokenCallback> =
+                            Some(Arc::new(move |token| {
                                 let new_frag = LlmEngineResponse::NewTextFragment(token);
                                 if let Err(err) = token_update_chan.send(new_frag) {
                                     log::error!(
@@ -586,7 +586,7 @@ impl EngineState {
     fn text_infer(
         &mut self,
         context: &mut TextInferenceContext,
-        token_callback: Option<Box<dyn Fn(String) -> bool + Send + 'static>>,
+        token_callback: Option<llama_cpp_rs::options::TokenCallback>,
     ) -> Option<String> {
         let this_seed = match self.model_config.seed {
             Some(s) => s,
@@ -624,37 +624,19 @@ impl EngineState {
                 predict_options.temperature = 1.0;
                 predict_options.min_p = 0.0;
                 predict_options.mirostat = mirostat_type as i32;
-                if let Some(eta) = context.parameters.mirostat_eta {
-                    predict_options.mirostat_eta = eta;
-                }
-                if let Some(tau) = context.parameters.mirostat_tau {
-                    predict_options.mirostat_tau = tau;
-                }
+                predict_options.mirostat_eta = context.parameters.mirostat_eta.unwrap_or(0.1);
+                predict_options.mirostat_tau = context.parameters.mirostat_tau.unwrap_or(5.0);
             }
         } else {
             predict_options.mirostat = 0;
-            if let Some(top_k) = context.parameters.top_k {
-                predict_options.top_k = top_k as i32;
-            }
-            if let Some(top_p) = context.parameters.top_p {
-                predict_options.top_p = top_p;
-            }
-            if let Some(min_p) = context.parameters.min_p {
-                predict_options.min_p = min_p;
-            }
-            if let Some(temp) = context.parameters.temperature {
-                predict_options.temperature = temp;
-            }
+            predict_options.top_k = context.parameters.top_k.unwrap_or(0) as i32;
+            predict_options.top_p = context.parameters.top_p.unwrap_or(1.0);
+            predict_options.min_p = context.parameters.min_p.unwrap_or(0.0);
+            predict_options.temperature = context.parameters.temperature.unwrap_or(1.0);
         }
-        if let Some(freq_pen) = context.parameters.frequency_penalty {
-            predict_options.frequency_penalty = freq_pen;
-        }
-        if let Some(rep_pen) = context.parameters.repeat_penalty {
-            predict_options.penalty = rep_pen;
-        }
-        if let Some(rep_range) = context.parameters.repeat_penalty_range {
-            predict_options.repeat = rep_range as i32;
-        }
+        predict_options.frequency_penalty = context.parameters.frequency_penalty.unwrap_or(0.0);
+        predict_options.penalty = context.parameters.repeat_penalty.unwrap_or(1.05) ;
+        predict_options.repeat = context.parameters.repeat_penalty_range.unwrap_or(0) as i32;
 
         let prompt = self.create_prompt_for_chat_input(context);
 
@@ -667,7 +649,7 @@ impl EngineState {
 
         let local_model_unwrapped = self.model.as_ref().unwrap();
         let (mut inferred_string, timings) =
-            match local_model_unwrapped.predict(prompt, predict_options) {
+            match local_model_unwrapped.predict(prompt, &predict_options) {
                 Ok((s, t)) => (s, t),
                 Err(err) => {
                     log::error!("Text inference failed: {}", err);

@@ -8,3 +8,4 @@ models
 config-*.yaml
 
 .debug*
+llama.log
