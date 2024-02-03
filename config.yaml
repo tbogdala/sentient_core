@@ -60,42 +60,36 @@ parameters:
     top_p: 0.9
     repeat_penalty: 1.15
     temperature: 0.7
-    repeat_penalty_range: 512
 
   - name: "Titanic"
     top_k: 91
     top_p: 0.21
     repeat_penalty: 1.21
     temperature: 1.01
-    repeat_penalty_range: 512
 
   - name: "Yara"
     top_k: 72
     top_p: 0.21
     repeat_penalty: 1.19
     temperature: 0.82
-    repeat_penalty_range: 512
 
   - name: "Midnight Enigma"
     top_k: 100
     top_p: 0.37
     repeat_penalty: 1.18
     temperature: 0.98
-    repeat_penalty_range: 512
 
   - name: "Shortwave"
     top_k: 33
     top_p: 0.64
     repeat_penalty: 1.07
     temperature: 1.53
-    repeat_penalty_range: 512
 
   - name: "Divine Intellect"
     top_k: 49
     top_p: 0.14
     repeat_penalty: 1.17
     temperature: 1.31
-    repeat_penalty_range: 512
 
   #top_k, top_p, and temperature are not used on mirostat samplers
   - name: "Mirostat"
@@ -103,13 +97,11 @@ parameters:
     mirostat_eta: 0.1
     mirostat_tau: 5.0
     repeat_penalty: 1.1
-    repeat_penalty_range: 512  
 
   - name: "Steady Hand"
     min_p: 0.05
     temperature: 1.1
     repeat_penalty: 1.01
-    repeat_penalty_range: 512 
   
 
 # NOTE: Currently models have to be full paths or relative. Things like '~' are not expanded properly.

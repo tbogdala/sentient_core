@@ -199,7 +199,7 @@ pub struct ConfiguredParameters {
     pub min_p: Option<f32>,
     pub frequency_penalty: Option<f32>,
     pub repeat_penalty: Option<f32>,
-    pub repeat_penalty_range: Option<usize>,
+    pub repeat_penalty_range: Option<usize>, // if not provided, defaults to context size
     pub temperature: Option<f32>,
 
     pub mirostat: Option<usize>, // 0=disabled, 1=mirostat1, 2=mirostat2

@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread};
+use std::{collections::VecDeque, sync::{Arc, Mutex}, thread};
 
 // these to uses are for logging debug files out for the prompt and the text inferrence result.
 #[cfg(debug_assertions)]
@@ -11,6 +11,7 @@ use llama_cpp_rs::{
     options::{ModelOptions, PredictOptions},
     LLama,
 };
+use once_cell::sync::Lazy;
 use rand::{rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 
@@ -501,11 +502,11 @@ impl EngineState {
         };
 
         // build an array of character names to stop on for everyone
-        let mut stop_seqs = vec![format!("{}: ", self.config.display_name)];
-        stop_seqs.push(format!("{}: ", context.chatlog_owner.name));
+        let mut stop_seqs = vec![format!("{}:", self.config.display_name)];
+        stop_seqs.push(format!("{}:", context.chatlog_owner.name));
         if !context.other_participants.is_empty() {
             for other in &context.other_participants {
-                stop_seqs.push(format!("{}: ", other.0.name));
+                stop_seqs.push(format!("{}:", other.0.name));
             }
         }
 
@@ -519,7 +520,7 @@ impl EngineState {
             top_p: context.parameters.top_p,
             min_p: context.parameters.min_p,
             rep_pen: context.parameters.repeat_penalty,
-            rep_pen_range: context.parameters.repeat_penalty_range,
+            rep_pen_range: context.parameters.repeat_penalty_range.or(Some(self.model_config.context_size)),
             typical: None,
             sampler_seed: None,
             mirostat: context.parameters.mirostat,
@@ -593,6 +594,61 @@ impl EngineState {
             None => -1, // this should make llama.cpp make a random seed
         };
 
+        // build a list of stop sequences based on names
+        let mut stop_seqs = vec![format!("{}:", self.config.display_name)];
+        stop_seqs.push(format!("{}:", context.chatlog_owner.name));
+        if !context.other_participants.is_empty() {
+            for other in &context.other_participants {
+                stop_seqs.push(format!("{}:", other.0.name));
+            }
+        }
+
+        let inner_token_callback: Option<llama_cpp_rs::options::TokenCallback> =
+            Some(Arc::new(move |token| {
+                // stash a few tokens in a lazily constructed VecDeque locked by a Mutex so we can properly look
+                // to see if any termination sequences have occurred.
+                const TOKEN_TRACK_COUNT: usize = 8;
+                static LAST_TOKENS: Lazy<Mutex<VecDeque<String>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
+                let mut last_few_tokens = LAST_TOKENS.lock().unwrap();
+
+                // turn it into a string and then search it for stop_seqs
+                let mut token_tail = String::new();
+                for tok in last_few_tokens.iter() {
+                    token_tail.push_str(tok);
+                }
+                let mut keep_predicting = true;
+                for stopper in &stop_seqs {
+                    if token_tail.contains(stopper) {
+                        log::debug!("Found stop sequence: '{}' ; Halting text inference.", stopper);
+                        keep_predicting = false;
+                        break;
+                    }
+                }
+                
+                // call the 'outer' callback if it passed the internal check to continue
+                if let Some(cb) = &token_callback {
+                    if !cb(token.clone()) {
+                        keep_predicting = false
+                    }
+                }
+
+                // Add the last token to the tracker; this is done late after processing so that 
+                // matches are only found after the stop sequence is fully committed to the predicted
+                // string - otherwise we the stop sequence appears in the final output without the ':'
+                // and won't get split away from the result.
+                if last_few_tokens.len() >= TOKEN_TRACK_COUNT {
+                    last_few_tokens.pop_front();
+                }
+                last_few_tokens.push_back(token);
+                
+                // clear the token tracker out if we're done
+                if !keep_predicting{
+                    last_few_tokens.clear();
+                }
+
+                keep_predicting
+            }));
+
         let mut predict_options = PredictOptions {
             seed: this_seed,
             batch: self.config.batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as i32,
@@ -601,7 +657,7 @@ impl EngineState {
                 .config
                 .maximum_new_tokens
                 .unwrap_or(DEFAULT_MAX_NEW_TOKENS) as i32,
-            token_callback,
+            token_callback: inner_token_callback,
             ..Default::default()
         };
 
@@ -635,8 +691,8 @@ impl EngineState {
             predict_options.temperature = context.parameters.temperature.unwrap_or(1.0);
         }
         predict_options.frequency_penalty = context.parameters.frequency_penalty.unwrap_or(0.0);
-        predict_options.penalty = context.parameters.repeat_penalty.unwrap_or(1.05) ;
-        predict_options.repeat = context.parameters.repeat_penalty_range.unwrap_or(0) as i32;
+        predict_options.penalty = context.parameters.repeat_penalty.unwrap_or(1.00) ;
+        predict_options.repeat = context.parameters.repeat_penalty_range.unwrap_or(self.model_config.context_size) as i32;
 
         let prompt = self.create_prompt_for_chat_input(context);
 
