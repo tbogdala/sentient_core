@@ -10,6 +10,7 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     text::Line,
     widgets::{List, ListItem, Paragraph},
+    Frame,
 };
 
 use crate::{
@@ -17,8 +18,8 @@ use crate::{
     config::{get_log_folder, CharacterFileYaml, ConfigurationFile, LOG_FILE_NAME},
     memories::{Memory, MemoryFile},
     tui::{
-        Frame, MessageBoxModalWidget, ProcessInputResult, StatefulList, TerminalEvent,
-        TerminalRenderable, TextEditingBlockModalWidget,
+        MessageBoxModalWidget, ProcessInputResult, StatefulList, TerminalEvent, TerminalRenderable,
+        TextEditingBlockModalWidget,
     },
 };
 

@@ -4,14 +4,14 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     text::Line,
     widgets::{List, ListItem, Paragraph},
+    Frame,
 };
 use std::path::{Path, PathBuf};
 
 use crate::{
     config::CharacterFileYaml,
     tui::{
-        Frame, MessageBoxModalWidget, ProcessInputResult, StatefulList, TerminalEvent,
-        TerminalRenderable,
+        MessageBoxModalWidget, ProcessInputResult, StatefulList, TerminalEvent, TerminalRenderable,
     },
 };
 

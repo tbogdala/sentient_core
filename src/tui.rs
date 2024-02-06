@@ -13,7 +13,7 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, ListState, Paragraph},
-    Terminal,
+    Frame, Terminal,
 };
 use std::{
     io, panic, thread,
@@ -44,7 +44,6 @@ pub enum ProcessInputResult {
 
 // Define some type aliases here to make things easier everywhere else. This application doesn't need
 // to preserve stdin/stdout and can freely take it over, so we'll use that as our backend.
-pub type Frame<'a> = ratatui::Frame<'a, ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 pub type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
 // Implement this on all UI state objects that can be drawn.

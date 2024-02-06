@@ -6,6 +6,7 @@ use ratatui::prelude::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Chart, Clear, Dataset, Paragraph, Sparkline};
+use ratatui::Frame;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
@@ -15,8 +16,8 @@ use crate::config::*;
 use crate::llm_engine::TextInferenceContext;
 use crate::llm_engine::{self, LlmEngineRequest, LlmEngineResponse};
 use crate::tui::{
-    centered_rect, slice_up_string, Frame, MessageBoxModalWidget, ProcessInputResult,
-    TerminalEvent, TerminalRenderable, TextEditingBlockModalWidget,
+    centered_rect, slice_up_string, MessageBoxModalWidget, ProcessInputResult, TerminalEvent,
+    TerminalRenderable, TextEditingBlockModalWidget,
 };
 
 // This enum is used to identify how the editor_widget should behave so that only
@@ -809,7 +810,7 @@ impl ChatState {
                         chat_history.push_back(Line::from(" "));
                     }
                 }
-            }    
+            }
         }
 
         // use the configured text alignment here.
@@ -1180,7 +1181,11 @@ impl TerminalRenderable for ChatState {
                 // the temporary chatlogitem is created so that there's consistent rendering
                 let in_flight_chatlogitem = ChatLogItem {
                     entity: self.waiting_for_character.as_ref().unwrap().name.clone(),
-                    lines: in_flight_text.trim_start().lines().map(|l| l.to_string()).collect(),
+                    lines: in_flight_text
+                        .trim_start()
+                        .lines()
+                        .map(|l| l.to_string())
+                        .collect(),
                     ..Default::default()
                 };
                 in_flight_lines = self.render_chatlog_item(hchunks[1], &in_flight_chatlogitem);

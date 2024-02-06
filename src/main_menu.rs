@@ -4,9 +4,10 @@ use ratatui::{
     style::Stylize,
     text::Line,
     widgets::Paragraph,
+    Frame,
 };
 
-use crate::tui::{Frame, ProcessInputResult, TerminalEvent, TerminalRenderable};
+use crate::tui::{ProcessInputResult, TerminalEvent, TerminalRenderable};
 
 #[derive(Default)]
 pub struct MainMenuState {}
