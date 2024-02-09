@@ -13,7 +13,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::chatlog::{ChatLog, ChatLogItem};
 use crate::config::*;
-use crate::llm_engine::TextInferenceContext;
+use crate::llm_engine::{LlmEngineCommand, TextInferenceContext};
 use crate::llm_engine::{self, LlmEngineRequest, LlmEngineResponse};
 use crate::tui::{
     centered_rect, slice_up_string, MessageBoxModalWidget, ProcessInputResult, TerminalEvent,
@@ -51,6 +51,7 @@ pub struct ChatState {
     manual_reply_mode: bool,
 
     send_to_server: Sender<LlmEngineRequest>,
+    send_cmd_to_server: Sender<LlmEngineCommand>,
     recv_on_client: Receiver<LlmEngineResponse>,
 
     editing_reply: bool,
@@ -85,6 +86,7 @@ impl ChatState {
         inference_parameters: Option<&ConfiguredParameters>,
         config: ConfigurationFile,
         send_to_server: Sender<LlmEngineRequest>,
+        send_cmd_to_server: Sender<LlmEngineCommand>,
         recv_on_client: Receiver<LlmEngineResponse>,
     ) -> ChatState {
         let config = config.clone();
@@ -118,6 +120,7 @@ impl ChatState {
             current_parameters,
             manual_reply_mode: false,
             send_to_server,
+            send_cmd_to_server,
             recv_on_client,
             editing_reply: false,
             editing_parameters: false,
@@ -310,9 +313,16 @@ impl ChatState {
     fn process_input_for_viewing_chatlog(&mut self, event: TerminalEvent) -> ProcessInputResult {
         if let TerminalEvent::Key(key) = event {
             if key.code == KeyCode::Esc {
-                return ProcessInputResult::ChangeScene(
-                    crate::application::ApplicationState::MainMenu,
-                );
+                // test to see if text is getting predicted and if so, cancel that request.
+                if self.in_flight_text.is_some() {
+                    if let Err(err) = self.send_cmd_to_server.send(LlmEngineCommand::CancelTextInference) {
+                        log::error!("Error while attempting to cancel text inference: {}", err);
+                    }
+                } else {
+                    return ProcessInputResult::ChangeScene(
+                        crate::application::ApplicationState::MainMenu,
+                    );
+                }
             } else if key.code == KeyCode::Char('y') {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     let context = TextInferenceContext {

@@ -342,7 +342,7 @@ impl TerminalRenderable for LogSelectState {
             .constraints(
                 [
                     Constraint::Percentage(20),
-                    Constraint::Min(2),
+                    Constraint::Max(2),
                     Constraint::Min(4),
                 ]
                 .as_ref(),

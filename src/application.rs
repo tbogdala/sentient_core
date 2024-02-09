@@ -149,6 +149,7 @@ impl<'a> Application<'a> {
                                 params,
                                 self.config.clone(),
                                 self.engine.send_to_server.clone(),
+                                self.engine.send_cmd_to_server.clone(),
                                 self.engine.recv_on_client.clone(),
                             ));
                         }

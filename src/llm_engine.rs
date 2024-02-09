@@ -40,6 +40,12 @@ pub enum LlmEngineRequest {
     ImmediateShutdown,
 }
 
+// This is an OOB style channel that can handle additional client commands while processing a LlmEngineRequest.
+#[derive(Clone, PartialEq)]
+pub enum LlmEngineCommand {
+    CancelTextInference,
+}
+
 #[derive(Clone, PartialEq)]
 pub enum LlmEngineResponse {
     NewText(Option<String>, TextInferenceContext),
@@ -49,6 +55,7 @@ pub enum LlmEngineResponse {
 
 pub struct LlmEngine {
     pub send_to_server: Sender<LlmEngineRequest>,
+    pub send_cmd_to_server: Sender<LlmEngineCommand>,
     pub recv_on_client: Receiver<LlmEngineResponse>,
     pub handle: thread::JoinHandle<()>,
 }
@@ -56,6 +63,7 @@ impl LlmEngine {
     pub fn spawn(config: ConfigurationFile, model_fileorname: String) -> LlmEngine {
         let (send_to_server, recv_on_server) = bounded::<LlmEngineRequest>(100);
         let (send_to_client, recv_on_client) = bounded::<LlmEngineResponse>(100);
+        let (send_cmd_to_server, recv_cmd_on_server) = bounded::<LlmEngineCommand>(10);
         let thread_handle = thread::spawn(move || {
             // failures should have been detected before this gets here
             let model_config = config
@@ -225,6 +233,7 @@ impl LlmEngine {
                         }
 
                         // if it hasn't been disabled, setup the callback to get tokens as they come in
+                        let callback_recv_cmd_from_client = recv_cmd_on_server.clone();
                         let token_update_chan = send_to_client.clone();
                         let token_callback: Option<llama_cpp_rs::options::TokenCallback> =
                             Some(Arc::new(move |token| {
@@ -238,7 +247,18 @@ impl LlmEngine {
 
                                 // TODO: for now we always continue but at some point this behavior
                                 // could also be tweaked to stop early.
-                                true
+                                let mut cancel_state = false;
+                                if let Ok(msg) = callback_recv_cmd_from_client.try_recv() {
+                                    if msg == LlmEngineCommand::CancelTextInference {
+                                        cancel_state = true;
+                                    }
+                                }
+                                if cancel_state == true {
+                                    log::debug!("Cancel request in callback, attempting to stop text inference...");
+                                    false // returning false here stops further text inference
+                                } else {
+                                     true
+                                }
                             }));
 
                         // if we have a local llm model loaded use that, otherwise try remote API config
@@ -261,6 +281,7 @@ impl LlmEngine {
 
         return LlmEngine {
             send_to_server,
+            send_cmd_to_server,
             recv_on_client,
             handle: thread_handle,
         };
