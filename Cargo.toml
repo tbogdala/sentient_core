@@ -7,10 +7,12 @@ description = "A terminal interface for chatting with AI using locally hosted la
 
 
 [dependencies]
-llama_cpp_rs = { git = "https://github.com/tbogdala/rust-llama.cpp.git" }
-candle-core = { version = "0.3", optional = true }
-candle-nn =  { version = "0.3", optional = true }
-candle-transformers =  { version = "0.3", optional = true }
+# Gotta force 'cc' down to 1.0.83 due to build breaking problems
+# $ cargo update -p cc --precise "1.0.83"
+llama_cpp_rs = { git = "https://github.com/tbogdala/rust-llama.cpp.git", branch="dev" }
+candle-core = { version = "0.4", optional = true }
+candle-nn =  { version = "0.4", optional = true }
+candle-transformers =  { version = "0.4", optional = true }
 anyhow = "1.0.72"
 chrono = "0.4.31"
 clap = "4.3.19"
@@ -33,7 +35,7 @@ unicode-width = "0.1.11"
 
 
 [features]
-default = ["cuda", "sentence_similarity_cuda"]
+default = []
 
 # CUDA backend for the main llamacpp interface
 cuda = ["llama_cpp_rs/cuda"]
@@ -51,5 +53,14 @@ sentence_similarity_cuda = [
     "candle-core/cudnn", 
     "candle-nn/cuda", 
     "candle-transformers/cuda",
+    "tokenizers"
+]
+
+# Enables Metal accellerated sentence_similarity via candle
+sentence_similarity_metal = [
+    "sentence_similarity",
+    "candle-core/metal", 
+    "candle-nn/metal", 
+    "candle-transformers/metal",
     "tokenizers"
 ]

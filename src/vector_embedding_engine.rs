@@ -26,11 +26,12 @@ impl VectorEmbeddingEngine {
         //emb_model_dir: &str, token_cutoff_limit: usize
         let emb_model_dir = &emb_config.dir_path;
 
-        let device = if emb_config.use_cpu {
-            candle_core::Device::Cpu
-        } else {
-            candle_core::Device::new_cuda(0).unwrap()
-        };
+        #[cfg(feature = "sentence_similarity_cuda")]
+        let device = candle_core::Device::new_cuda(0).unwrap();
+
+        #[cfg(feature = "sentence_similarity_metal")]
+        let device = candle_core::Device::new_metal(0).unwrap();
+
 
         let config_filename = format!("{}/config.json", emb_model_dir);
         let tokenizer_filename = format!("{}/tokenizer.json", emb_model_dir);

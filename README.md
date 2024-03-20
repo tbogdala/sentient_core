@@ -307,10 +307,8 @@ For example, you'll need to enable the `metal` feature instead for hardware acce
 
 The feature `sentence_similarity` uses the [Candle library](https://github.com/huggingface/candle)
 to load the BERT models for generating vector embeddings. As is, the project should build 
-including `sentence_similarity_cuda` as a default feature, allowing accelleration for cuda compatible devices.
-When other backends become available, different `sentence_similarity` feature groups will be added, but
-it is recommended to just disable the feature if it cannot be hardware accellerated. Currently it
-is known not to build on Windows with Cuda accelleration.
+including `sentence_similarity_cuda` as a feature, allowing accelleration for cuda compatible devices.
+Mac builds using metal can enable this feature with `sentence_similarity_metal`.
 
 
 ```bash
@@ -408,8 +406,6 @@ llama.cpp generates has to be with a supported model and the Llama models genera
   do syntax highlighting for emotes delimited by asterisks.
 * Other participants currently don't have syntax highlighting until multi-chat mode is enabled.
 * No way to cancel text generation currently.
-* Mac and Windows builds currently do not support hardware accellerated sentence_similarity 
-  testing with vector embeddings.
 * Error messages will corrupt the output unless stderr is redirected to another terminal or file. Eventually
   this will be handled through message boxes instead.
 * The new rust-llama.cpp backend implementation will sometimes cause a crash on a bad UTF-8 boundary,
